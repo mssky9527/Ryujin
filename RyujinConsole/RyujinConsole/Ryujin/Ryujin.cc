@@ -94,7 +94,7 @@ bool Ryujin::run(const RyujinObfuscatorConfig& config) {
 		return FALSE;
 	}
 
-	std::vector<RyujinProcedure> processed_procs;
+	std::vector<RyujinObfuscationCore> processed_procs;
 
 	for (auto& proc : m_ryujinProcedures) {
 
@@ -138,17 +138,18 @@ bool Ryujin::run(const RyujinObfuscatorConfig& config) {
 		//Is time to obfuscate ?
 		RyujinObfuscationCore obc(config, proc);
 		obc.Run();
-		processed_procs.push_back(obc.getProcessedProc());
-		obc.~RyujinObfuscationCore();
 
 		//TODO: Custom passes support
+
+		//Storing processed procs
+		processed_procs.push_back(obc);
 
 		//Clean up opcodes
 		delete[] ucOpcodes;
 
 	}
 
-	//More obfuscation
+	//Remove old code and jump to the new code region
 	if (config.m_isIgnoreOriginalCodeRemove) todoAction();
 
 	//Add section
@@ -159,10 +160,18 @@ bool Ryujin::run(const RyujinObfuscatorConfig& config) {
 	peSections.AddNewSection(m_strInputFilePath, chSectionName);
 
 	//Get New Opcodes - todo: improve, this only works for the first procedure
-	std::vector<unsigned char> tempValued = processed_procs.front().getUpdateOpcodes();
+	std::vector<unsigned char> tempValued;
+	for (auto& obc : processed_procs) {
 
-	//Fix relocations
+		tempValued = obc.getProcessedProc().getUpdateOpcodes();
 
+		//Fix relocations
+		obc.applyRelocationFixupsToInstructions(reinterpret_cast<uintptr_t>(imgDos), peSections.getRyujinSectionVA(), tempValued);
+
+		//Destructing class
+		obc.~RyujinObfuscationCore();
+
+	}
 
 	//Process new opcodes
 	peSections.ProcessOpcodesNewSection(tempValued);

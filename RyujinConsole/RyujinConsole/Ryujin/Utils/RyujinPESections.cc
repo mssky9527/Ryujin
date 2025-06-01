@@ -145,8 +145,6 @@ BOOL RyujinPESections::FinishNewSection(const std::string& strOutputFilePath) {
 	auto bSucess = RyujinUtils::SaveBuffer(strOutputFilePath, m_ucResizedPE, m_szNewSec);
 
 	if (!bSucess) return FALSE;
-
-	delete[] m_ucModifiedPeMap;
 	
 	return TRUE;
 }

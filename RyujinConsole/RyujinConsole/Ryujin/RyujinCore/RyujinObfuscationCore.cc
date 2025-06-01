@@ -97,9 +97,8 @@ void RyujinObfuscationCore::addPaddingSpaces() {
 			code.init(runtime.environment());
 			asmjit::x86::Assembler a(&code);
 
-			for (auto i = 0; i < 50; i++) {
+			for (auto i = 0; i < MAX_PADDING_SPACE_INSTR; i++)
 				a.nop();
-			}
 
 			code.flatten();
 
@@ -136,6 +135,305 @@ BOOL RyujinObfuscationCore::Run() {
 	*/
 
 	return TRUE;
+}
+
+uint32_t RyujinObfuscationCore::findOpcodeOffset(const uint8_t* data, size_t dataSize, const void* opcode, size_t opcodeSize) {
+	
+	if (opcodeSize == 0 || dataSize < opcodeSize) return 0;
+
+	for (size_t i = 0; i <= dataSize - opcodeSize; ++i) if (std::memcmp(data + i, opcode, opcodeSize) == 0) return static_cast<uint32_t>(i);
+
+	return 0;
+}
+
+std::vector<uint8_t> RyujinObfuscationCore::fix_branch_near_far_short(uint8_t original_opcode, uint64_t jmp_address, uint64_t target_address) {
+	
+	// Mapping short opcodes to near
+	static const std::unordered_map<uint8_t, uint8_t> SHORT_TO_NEAR = {
+
+		{ 0x70, 0x80 }, { 0x71, 0x81 }, { 0x72, 0x82 }, { 0x73, 0x83 },
+		{ 0x74, 0x84 }, { 0x75, 0x85 }, { 0x76, 0x86 }, { 0x77, 0x87 },
+		{ 0x78, 0x88 }, { 0x79, 0x89 }, { 0x7A, 0x8A }, { 0x7B, 0x8B },
+		{ 0x7C, 0x8C }, { 0x7D, 0x8D }, { 0x7E, 0x8E }, { 0x7F, 0x8F }
+
+	};
+
+	std::vector<uint8_t> result;
+
+	// First tries as a short jump (2 bytes)
+	const int short_length = 2;
+	const int64_t short_disp = static_cast<int64_t>(target_address) - (jmp_address + short_length);
+
+	if (short_disp >= -128 && short_disp <= 127) {
+
+		// Keeps it as a short jump
+		result.push_back(original_opcode);
+		result.push_back(static_cast<uint8_t>(short_disp));
+
+		return result;
+	}
+
+	// Converts to a near jump (6 bytes)
+	auto it = SHORT_TO_NEAR.find(original_opcode);
+	if (it == SHORT_TO_NEAR.end()) throw new std::exception("[X] RyujinObfuscationCore::fix_branch_offset_cpp: Branch opcode is not suported to regenerate a branch");
+	
+	const uint8_t near_opcode = it->second;
+	const int near_length = 6;
+	const int64_t near_disp = static_cast<int64_t>(target_address) - (jmp_address + near_length);
+
+	// Checks for 32-bit overflow
+	if (near_disp < INT32_MIN || near_disp > INT32_MAX) throw std::exception("[X] Offset exceeds the limit of a 32-bit signed integer.");
+
+	// Packs the displacement (little-endian)
+	result.push_back(0x0F);
+	result.push_back(near_opcode);
+
+	const uint32_t raw_disp = static_cast<uint32_t>(near_disp);
+	result.push_back((raw_disp >> 0) & 0xFF);
+	result.push_back((raw_disp >> 8) & 0xFF);
+	result.push_back((raw_disp >> 16) & 0xFF);
+	result.push_back((raw_disp >> 24) & 0xFF);
+
+	return result;
+}
+
+void RyujinObfuscationCore::applyRelocationFixupsToInstructions(uintptr_t imageBase, DWORD virtualAddress, std::vector<unsigned char>& new_opcodes) {
+
+	/*
+		Creating a new basic block for our obfuscated code
+	*/
+	auto bb = new RyujinBasicBlockerBuilder(ZYDIS_MACHINE_MODE_LONG_64, ZydisStackWidth_::ZYDIS_STACK_WIDTH_64);
+	m_obfuscated_bb = bb->createBasicBlocks(new_opcodes.data(), static_cast<size_t>(new_opcodes.size()), imageBase + virtualAddress);
+
+	//The current block id that we're working with
+	int block_id = 0;
+
+	for (auto& block : m_proc.basic_blocks) {
+
+		for (auto& instruction : block.instructions) {
+
+			//Fixing all Call to a immediate(No IAT) values from our obfuscated opcodes -> CALL IMM
+			if (instruction.instruction.info.meta.category == ZYDIS_CATEGORY_CALL && instruction.instruction.operands->type == ZYDIS_OPERAND_TYPE_IMMEDIATE) {
+
+				//References for the data and size of the vector with the obfuscated opcodes
+				auto size = new_opcodes.size();
+				auto data = new_opcodes.data();
+
+				//Getting the immediate value of the original "CALL"
+				const uint32_t immediateValue = instruction.instruction.operands[0].imm.value.u;
+
+				/*
+					Creating a signature for the opcode from the original section so that we can
+					scan the obfuscated region using the correct instruction offset and recalculate its displacement.
+				*/
+				unsigned char ucOpcodeSignature[5]{ instruction.instruction.info.opcode };
+				std::memcpy(&*(ucOpcodeSignature + 1), &immediateValue, sizeof(immediateValue));
+
+				//Finding the offset of the "CALL" using the opcode signature in the obfuscated section
+				const uint32_t offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 5);
+
+				//Calculating the VA (Virtual Address) of the "CALL" in the obfuscated section
+				uint32_t obfuscated_call_va = imageBase + virtualAddress + offset;
+
+				/*
+					Calculating the new immediate offset to fix the relocation of the new obfuscated "CALL" instruction
+				*/
+				// Calculate address of the next instruction (CALL instruction + its length)
+				const uintptr_t next_instruction_address = instruction.addressofinstruction + instruction.instruction.info.length;
+
+				// Get the relative displacement from the first operand (signed 32-bit integer)
+				const int32_t displacement = static_cast<int32_t>(instruction.instruction.operands[0].imm.value.s);
+
+				// Calculate absolute target address
+				const uintptr_t target_address = next_instruction_address + displacement;
+
+				//Calculating the new immediate value for the "CALL" instruction using the VA addresses of the obfuscated section
+				uint32_t new_immediate_reloc = static_cast<uint32_t>(target_address) - (obfuscated_call_va + instruction.instruction.info.length); //length == 5
+
+				//Fixing the relocation of the "CALL" instruction in the obfuscated region
+				std::memcpy(&*(data + offset + 1), &new_immediate_reloc, sizeof(uint32_t));
+
+				std::printf("[OK] Fixing CALL IMM -> %s from 0x%X to 0x%X\n", instruction.instruction.text, immediateValue, new_immediate_reloc);
+
+			} 
+			//Fixing all Call to a memory(IAT) values from our obfuscated opcodes -> CALL [MEMORY]
+			else if (instruction.instruction.info.meta.category == ZYDIS_CATEGORY_CALL && instruction.instruction.operands->type == ZYDIS_OPERAND_TYPE_MEMORY) {
+
+				// References for the vector's data and size with the obfuscated opcodes
+				auto size = new_opcodes.size();
+				auto data = new_opcodes.data();
+
+				// Obtaining the memory immediate value for the "CALL"
+				const uint32_t memmory_immediate = instruction.instruction.operands->mem.disp.value;
+
+				// Creating a signature to search for the offset in the obfuscated opcodes
+				unsigned char ucOpcodeSignature[6]{ 0xFF, 0x15 };
+				std::memcpy(&*(ucOpcodeSignature + 2), &memmory_immediate, sizeof(memmory_immediate));
+
+				// Finding the offset of the "CALL" memory using the opcode signature in the obfuscated section
+				const uint32_t offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 6);
+
+				// If we don't find the signature, it might not be an IAT... requiring future handling.
+				if (offset == 0) {
+
+					std::printf("[X] Invalid IAT call or call to a custom address detected.....\n");
+
+					continue;
+				}
+
+				// Calculating the VA (Virtual Address) of the "CALL" instruction to the IAT in the obfuscated section
+				const uintptr_t obfuscated_call_iat_va = ((imageBase + virtualAddress + offset));
+
+				// Calculating the VA of the next instruction after the "CALL" to the IAT in the original section
+				const uintptr_t next_instruction_address = instruction.addressofinstruction + instruction.instruction.info.length;
+
+				// Calculating the target address of the IAT using the memory immediate from the original instruction
+				const uintptr_t iat_target_address = next_instruction_address + memmory_immediate;
+
+				// Calculating new RIP (Instruction Pointer) for the obfuscated instruction
+				uintptr_t new_rip = obfuscated_call_iat_va + instruction.instruction.info.length;
+
+				// Calculating the displacement from the new position to the IAT address
+				const uint32_t new_memory_immediate_iat = iat_target_address - new_rip;
+
+				// Fixing the relocation of the "CALL" instruction in the obfuscated region to the new memory immediate
+				std::memcpy(&*(data + offset + 2), &new_memory_immediate_iat, sizeof(uint32_t));
+
+				std::printf("[OK] Fixing IAT Call -> %s from 0x%X to 0x%X\n", instruction.instruction.text, obfuscated_call_iat_va, new_memory_immediate_iat);
+
+			}
+			// Searching for MOV and LEA instructions that have the second operand as memory-relative
+			else if ((instruction.instruction.info.mnemonic == ZYDIS_MNEMONIC_LEA || instruction.instruction.info.mnemonic == ZYDIS_MNEMONIC_MOV) && instruction.instruction.operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY) {
+
+				const ZydisDecodedOperandMem* mem = &instruction.instruction.operands[1].mem;
+
+				//Looking for: lea reg, [MEMORY] and mov reg, [MEMORY]
+				if (mem->base == ZYDIS_REGISTER_RIP && mem->index == ZYDIS_REGISTER_NONE && mem->disp.has_displacement) {
+
+					// References for data and vector size with obfuscated opcodes
+					auto size = new_opcodes.size();
+					auto data = new_opcodes.data();
+
+					// Getting the memory immediate offset value to build the signature
+					const uint32_t memmory_immediate_offset = mem->disp.value;
+
+					// Creating a signature to search for the offset in the obfuscated opcodes
+					unsigned char ucOpcodeSignature[7]{ 0 };
+					std::memcpy(&ucOpcodeSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 3); // 3 BYTES do opcode relativo ao LEA ou MOV
+					std::memcpy(&*(ucOpcodeSignature + 3), &memmory_immediate_offset, sizeof(memmory_immediate_offset));
+
+					// Finding the offset of the "LEA" or "MOV" that uses memory-relative addressing
+					const ZyanI64 offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 7);
+
+					// If we don't find any offset, there may be an issue or bug.
+					if (offset == 0) {
+
+						std::printf("[X] Invalid lea reference or uknown lea detected.....\n");
+
+						continue;
+					}
+
+					// Retrieving the instruction address in the original section
+					const uintptr_t original_address = instruction.addressofinstruction;
+
+					// Calculating new address in the obfuscated section
+					const uintptr_t obfuscated_va_address = ((imageBase + virtualAddress + offset));
+
+					/*
+						Calculating new displacement for the immediate value
+					*/
+					// Calculating the address of the instruction following the original instruction
+					const uintptr_t original_rip = original_address + instruction.instruction.info.length;
+					
+					// Calculating the original target address of the original instruction
+					const uintptr_t target_original = original_rip + memmory_immediate_offset;
+
+					// Calculating the address of the instruction following the obfuscated instruction
+					const uintptr_t new_obfuscated_rip = obfuscated_va_address + instruction.instruction.info.length;
+
+					// New memory immediate value for the instruction
+					const uintptr_t new_memory_immediate = target_original - new_obfuscated_rip;
+
+					// Fixing the immediate value for the "LEA" or "MOV" instruction with the corrected relative immediate value
+					std::memcpy(&*(data + offset + 3), &new_memory_immediate, sizeof(uint32_t)); // 3 bytes for the size of the LEA or MOV opcode
+
+					std::printf("[OK] Fixing -> %s - from %X to %X\n", instruction.instruction.text, mem->disp.value, new_memory_immediate);
+
+				}
+
+			}
+			else if (instruction.instruction.info.meta.category == ZYDIS_CATEGORY_COND_BR || instruction.instruction.info.meta.category == ZYDIS_CATEGORY_UNCOND_BR) {
+			
+				// References for data and vector size with obfuscated opcodes
+				auto size = new_opcodes.size();
+				auto data = new_opcodes.data();
+
+				/*
+					Finding the address of the currently analyzed branch instruction within the set of obfuscated basic blocks
+				*/
+				uintptr_t obfuscated_jmp_address = 0;
+				auto basic_block_obfuscated_ctx = m_obfuscated_bb.at(block_id);
+				for (auto& inst : basic_block_obfuscated_ctx.instructions)
+
+					if (inst.instruction.info.opcode == instruction.instruction.info.opcode && inst.instruction.operands[0].imm.value.u == instruction.instruction.operands[0].imm.value.u) {
+						obfuscated_jmp_address = inst.addressofinstruction;
+						break;
+					}
+
+				/*
+					Based on the branch's destination address, we’ll search for the block ID in our vector so that we can
+					synchronize both the obfuscated and original blocks to work on a fix.
+				*/
+				auto address_branch = instruction.addressofinstruction + instruction.instruction.info.length + instruction.instruction.operands[0].imm.value.u;
+				uint32_t local_block_id = 0;
+				for (auto& block : m_proc.basic_blocks) {
+
+					if (address_branch >= block.start_address && address_branch <= block.end_address)
+						break;
+
+					local_block_id++;
+				}
+
+				//Calculating our new branch immediate offset
+				auto basic_block_original = m_proc.basic_blocks.at(local_block_id);
+				auto basic_block_obfuscated = m_obfuscated_bb.at(local_block_id);
+
+				/*
+					Normally, obfuscated and deobfuscated blocks are 1-to-1, and we just need to get the address relative
+					to the first instruction of the block in question so we can determine the jump address for the new obfuscated region.
+				*/
+				auto obfuscated_target_address = basic_block_obfuscated.instructions.at(0).addressofinstruction;
+
+				/*
+					Let's fix our new branch. Previously it was a "near" jump, but now it will be "far" depending on the jump length.
+					This procedure will perform the calculation and generate a far or near branch depending on the need
+					and the output of the obfuscated code.
+				*/
+				auto corrected = fix_branch_near_far_short(instruction.instruction.info.opcode, obfuscated_jmp_address, obfuscated_target_address);
+
+				// Creating a signature for the original branch in the obfuscated opcode to be fixed
+				unsigned char ucSignature[2]{ 0, 0 };
+				std::memcpy(ucSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 2);
+				// Finding the correct offset of the opcode to apply the patch
+				const uint32_t offset = findOpcodeOffset(data, size, &ucSignature, 2);
+
+				// Clearing the branch so we can insert the new branch with the corrected opcode and its offset
+				std::memset(&*(data + offset), 0x90, 9); // Equivalent to -> branch + offset and possibly some add reg, value -> we have space because "addPaddingSpaces" into this section.
+				
+				// Patching the cleared region with the new branch, now fully fixed and with the newly calculated jump displacement
+				std::memcpy(&*(data + offset), corrected.data(), corrected.size());
+
+				std::printf("[OK] Fixing %s -> %X -> id: %X\n", instruction.instruction.text, instruction.instruction.operands[0].imm.value.u, block_id);
+				
+			}
+
+		}
+
+		//Increment block index
+		block_id++;
+
+	}
+
 }
 
 RyujinObfuscationCore::~RyujinObfuscationCore() {
