@@ -162,19 +162,19 @@ bool Ryujin::run(const RyujinObfuscatorConfig& config) {
 
 		auto tempValued = obc.getProcessedProc().getUpdateOpcodes();
 
-		//Fix relocations
+		// Fix relocations
 		obc.applyRelocationFixupsToInstructions(reinterpret_cast<uintptr_t>(imgDos), peSections.getRyujinSectionVA() + offsetVA, tempValued);
 
-		//Removendo e adicionando um salto no procedimento original e removendo opcodes originais para um salto ao novo código ofuscado
+		// Removing and adding a jump in the original procedure and removing original opcodes for a jump to the new obfuscated code
 		obc.removeOldOpcodeRedirect(peSections.mappedPeDiskBaseAddress(), peSections.getRyujinMappedPeSize(), reinterpret_cast<uintptr_t>(imgDos) + peSections.getRyujinSectionVA() + offsetVA, config.m_isIgnoreOriginalCodeRemove);
 
-		//Destructing class
+		// Destructing class
 		obc.~RyujinObfuscationCore();
 
-		//Inserindo procedures na lista de opcodes corrigidos
+		// Inserting procedures into the list of corrected opcodes
 		opcodesWithRelocsFixed.insert(opcodesWithRelocsFixed.end(), tempValued.begin(), tempValued.end());
 
-		// Incrementando o offset com o tamanho dos opcodes em questão
+		// Incrementing the offset with the size of the opcodes in question
 		offsetVA += tempValued.size();
 
 	}

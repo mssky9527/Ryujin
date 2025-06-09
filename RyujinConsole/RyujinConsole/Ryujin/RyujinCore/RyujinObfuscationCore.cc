@@ -74,38 +74,48 @@ BOOL RyujinObfuscationCore::extractUnusedRegisters() {
 
 void RyujinObfuscationCore::addPaddingSpaces() {
 
+	// Initializing AsmJit
 	asmjit::JitRuntime runtime;
 
 	for (auto& block : m_proc.basic_blocks) {
 
+		// Vector to store the opcodes related to the current context basic block
 		std::vector<std::vector<ZyanU8>> new_instructions;
 
 		for (auto& opcode : block.opcodes) {
 
+			// Saving all original opcodes of the basic block
 			std::vector<ZyanU8> new_opcodes;
 
 			for (auto individual_opcode : opcode)
 				new_opcodes.push_back(individual_opcode);
 
+			// Adding them to the main control vector
 			new_instructions.push_back(new_opcodes);
 
 			//Storing Nop-Spacing
 			std::vector<ZyanU8> gen_opcodes;
 
+			// Initializing AsmJit
 			asmjit::CodeHolder code;
 			code.init(runtime.environment());
 			asmjit::x86::Assembler a(&code);
 
+			// Inserting nop-spacing technique
 			for (auto i = 0; i < MAX_PADDING_SPACE_INSTR; i++) a.nop();
 
+			// Flush flatten
 			code.flatten();
 
+			// Getting the result from JIT
 			auto section = code.sectionById(0);
 			const auto buf = section->buffer().data();
 			auto size = section->buffer().size();
 
+			// Storing each new generated opcode
 			for (auto i = 0; i < size; ++i) gen_opcodes.push_back(buf[i]);
 
+			// Storing in the main vector of the block
 			new_instructions.push_back(gen_opcodes);
 
 		}
@@ -266,7 +276,322 @@ void RyujinObfuscationCore::obfuscateIat() {
 }
 
 void RyujinObfuscationCore::insertJunkCode() {
-	// TODO
+
+	// Initializing AsmJit
+	asmjit::JitRuntime runtime;
+	
+	for (auto& block : m_proc.basic_blocks) {
+
+		// New vector to load the updated opcodes for the given block
+		std::vector<std::vector<ZyanU8>> new_instructions;
+		
+		for (auto& opcode : block.opcodes) {
+
+			// Saving all original opcodes of the basic block
+			std::vector<ZyanU8> new_opcodes;
+
+			// Storing the original opcodes of the procedure
+			for (auto individual_opcode : opcode) new_opcodes.push_back(individual_opcode);
+
+			// Inserting original opcodes into the control vector
+			new_instructions.push_back(new_opcodes);
+
+			// Generating junk code
+			std::vector<ZyanU8> junk_opcodes;
+
+			// Initializing AsmJit
+			asmjit::CodeHolder code;
+			code.init(runtime.environment());
+			asmjit::x86::Assembler a(&code);
+
+			// Let's iterate over all registers not used by the procedure to generate junk code
+			for (auto reg : m_unusedRegisters) {
+
+				// Nop-Spacing technique for alignment
+				for (auto i = 0; i < MAX_PADDING_SPACE_INSTR; i++) a.nop();
+
+				// Junk code insertion technique
+				for (auto i = 0; i < MAX_JUNK_GENERATION_ITERATION; i++) {
+
+					// Generating random value for obfuscation
+					std::random_device rd;
+					std::mt19937 gen(rd());
+					std::uniform_int_distribution<uint32_t> dist(0, 0xFFFF);
+					auto random_value = dist(gen);
+
+					// Each free register has its own junk code (todo: this should be random and generated with some algorithm)
+					switch (reg) {
+
+						case ZYDIS_REGISTER_RAX: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::rax);
+							a.pushf();
+							a.mov(asmjit::x86::rax, 0);
+
+							a.xor_(asmjit::x86::rax, random_value);
+							a.inc(asmjit::x86::rax);
+							a.dec(asmjit::x86::rax);
+							a.add(asmjit::x86::rax, random_value);
+							a.sub(asmjit::x86::rax, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::rax);
+
+							break;
+
+						}
+						case ZYDIS_REGISTER_RBX: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::rbx);
+							a.pushf();
+							a.mov(asmjit::x86::rbx, 0);
+
+							a.rol(asmjit::x86::rbx, random_value);
+							a.ror(asmjit::x86::rbx, random_value);
+							a.xchg(asmjit::x86::rbx, asmjit::x86::rbx);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::rbx);
+							break;
+
+						}
+						case ZYDIS_REGISTER_RCX: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::rcx);
+							a.pushf();
+							a.mov(asmjit::x86::rcx, 0);
+
+							a.mov(asmjit::x86::rcx, random_value);
+							a.add(asmjit::x86::rcx, random_value);
+							a.mov(asmjit::x86::rcx, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::rcx);
+							break;
+
+						}
+						case ZYDIS_REGISTER_RDX: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::rdx);
+							a.pushf();
+							a.mov(asmjit::x86::rdx, 0);
+
+							a.add(asmjit::x86::rdx, random_value);
+							a.shr(asmjit::x86::rdx, random_value);
+							a.shl(asmjit::x86::rdx, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::rdx);
+							break;
+
+						}
+						case ZYDIS_REGISTER_RSI: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::rsi);
+							a.pushf();
+							a.mov(asmjit::x86::rsi, 0);
+
+							a.mov(asmjit::x86::rsi, random_value);
+							a.not_(asmjit::x86::rsi);
+							a.not_(asmjit::x86::rsi);
+							a.add(asmjit::x86::rsi, random_value);
+							a.sub(asmjit::x86::rsi, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::rsi);
+							break;
+
+						}
+						case ZYDIS_REGISTER_RDI: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::rdi);
+							a.pushf();
+							a.mov(asmjit::x86::rdi, 0);
+
+							a.mov(asmjit::x86::rdi, random_value);
+							a.xor_(asmjit::x86::rdi, asmjit::x86::rdi);
+							a.add(asmjit::x86::rdi, random_value);
+							a.sub(asmjit::x86::rdi, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::rdi);
+							break;
+
+						}
+						case ZYDIS_REGISTER_R8: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::r8);
+							a.pushf();
+							a.mov(asmjit::x86::r8, 0);
+
+							a.xor_(asmjit::x86::r8, asmjit::x86::r8);
+							a.mov(asmjit::x86::r8, random_value);
+							a.or_(asmjit::x86::r8, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::r8);
+							break;
+
+						}
+						case ZYDIS_REGISTER_R9: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::r9);
+							a.pushf();
+							a.mov(asmjit::x86::r9, 0);
+		
+							a.shr(asmjit::x86::r9, random_value);
+							a.shl(asmjit::x86::r9, random_value);
+							a.add(asmjit::x86::r9, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::r9);
+							break;
+
+						}
+						case ZYDIS_REGISTER_R10: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::r10);
+							a.pushf();
+							a.mov(asmjit::x86::r10, 0);
+
+							a.mov(asmjit::x86::r10, random_value);
+							a.imul(asmjit::x86::r10, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::r10);
+							break;
+
+						}
+						case ZYDIS_REGISTER_R11: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::r11);
+							a.pushf();
+							a.mov(asmjit::x86::r11, 0);
+
+							a.inc(asmjit::x86::r11);
+							a.mov(asmjit::x86::r11, random_value);
+							a.dec(asmjit::x86::r11);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::r11);
+							break;
+
+						}
+						case ZYDIS_REGISTER_R12: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::r12);
+							a.pushf();
+							a.mov(asmjit::x86::r12, 0);
+
+							a.add(asmjit::x86::r12, random_value);
+							a.sub(asmjit::x86::r12, random_value);
+							a.mov(asmjit::x86::r12, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::r12);
+							break;
+
+						}
+						case ZYDIS_REGISTER_R13: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::r13);
+							a.pushf();
+							a.mov(asmjit::x86::r13, 0);
+
+							a.mov(asmjit::x86::r13, random_value);
+							a.xor_(asmjit::x86::r13, random_value);
+							a.add(asmjit::x86::r13, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::r13);
+							break;
+						}
+						case ZYDIS_REGISTER_R14: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::r14);
+							a.pushf();
+							a.mov(asmjit::x86::r14, 0);
+
+							a.xor_(asmjit::x86::r14, random_value);
+							a.xor_(asmjit::x86::r14, random_value);
+							a.add(asmjit::x86::r14, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::r14);
+							break;
+
+						}
+						case ZYDIS_REGISTER_R15: {
+
+							// Junk Code Entry
+							a.push(asmjit::x86::r15);
+							a.pushf();
+							a.mov(asmjit::x86::r15, 0);
+
+							a.add(asmjit::x86::r15, random_value);
+							a.add(asmjit::x86::r15, random_value);
+							a.sub(asmjit::x86::r15, random_value);
+							a.xor_(asmjit::x86::r15, random_value);
+
+							// Junk Code Out
+							a.popf();
+							a.pop(asmjit::x86::r15);
+							break;
+
+						}
+						default: break;
+					}
+
+				}
+
+			}
+
+			// AsmJit Flush flatten
+			code.flatten();
+
+			// Getting the result of opcodes generated via JIT to add to our junk opcodes in the current iteration context
+			auto section = code.sectionById(0);
+			const auto buf = section->buffer().data();
+			auto size = section->buffer().size();
+			for (auto i = 0; i < size; ++i) junk_opcodes.push_back(buf[i]);
+
+			// Adding the newly processed opcodes to the global instruction vector
+			new_instructions.push_back(junk_opcodes);
+
+		}
+
+		// Overwriting opcodes with the new obfuscated ones
+		block.opcodes.clear();
+		block.opcodes.assign(new_instructions.begin(), new_instructions.end());
+	
+	}
+
 }
 
 void RyujinObfuscationCore::updateBasicBlocksContext() {
