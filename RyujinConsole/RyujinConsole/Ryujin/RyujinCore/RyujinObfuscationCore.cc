@@ -436,6 +436,12 @@ void RyujinObfuscationCore::insertJunkCode() {
 
 }
 
+void RyujinObfuscationCore::insertVirtualization() {
+
+	//TODO
+
+}
+
 void RyujinObfuscationCore::updateBasicBlocksContext() {
 
 	auto new_obfuscated_opcodes = getProcessedProc().getUpdateOpcodes();
@@ -455,8 +461,18 @@ BOOL RyujinObfuscationCore::Run() {
 	//Obfuscate IAT for the configured procedures
 	if (m_config.m_isIatObfuscation) {
 
-		//First obfuscate IAT
+		// Obfuscate IAT
 		obfuscateIat();
+
+		//Update our basic blocks context to rely 1-1 for the new obfuscated opcodes.
+		this->updateBasicBlocksContext();
+
+	}
+
+	if (m_config.m_isVirtualized) {
+
+		// Insert Virtualization
+		insertVirtualization();
 
 		//Update our basic blocks context to rely 1-1 for the new obfuscated opcodes.
 		this->updateBasicBlocksContext();
@@ -465,17 +481,13 @@ BOOL RyujinObfuscationCore::Run() {
 
 	if (m_config.m_isJunkCode) {
 
-		//First let's insert junk code
+		// Insert junk code
 		insertJunkCode();
 
 		//Update our basic blocks context to rely 1-1 for the new obfuscated opcodes.
 		this->updateBasicBlocksContext();
 
 	}
-
-	/*
-		if (m_config.m_isVirtualized) todoAction();
-	*/
 
 	return TRUE;
 }

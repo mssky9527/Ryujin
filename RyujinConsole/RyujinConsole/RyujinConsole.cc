@@ -13,7 +13,7 @@ auto main() -> int {
     config.m_isIgnoreOriginalCodeRemove = FALSE;
     config.m_isJunkCode = TRUE;
     config.m_isRandomSection = FALSE;
-    config.m_isVirtualized = FALSE;
+    config.m_isVirtualized = TRUE;
     config.m_isIatObfuscation = TRUE;
     config.m_isEncryptObfuscatedCode = FALSE;
     std::vector<std::string> procsToObfuscate{
