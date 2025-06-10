@@ -311,12 +311,6 @@ void RyujinObfuscationCore::insertJunkCode() {
 				// Junk code insertion technique
 				for (auto i = 0; i < MAX_JUNK_GENERATION_ITERATION; i++) {
 
-					// Generating random value for obfuscation
-					std::random_device rd;
-					std::mt19937 gen(rd());
-					std::uniform_int_distribution<uint32_t> dist(0, 0xFFFF);
-					auto random_value = dist(gen);
-
 					/*
 						Converting ZydisRegister to GP Register based on it's own ID.
 					*/
@@ -333,17 +327,84 @@ void RyujinObfuscationCore::insertJunkCode() {
 					auto regx = a.gpz(uint32_t(idx));
 
 					/*
-						Gerando Junk Code instructions de maneira randomica
+						Generating Junk Code instructions randomly
 					*/
-					// Todo: Implementar algoritmo para gerar junk code randomico
+
+					// Generating random value for obfuscation
+					std::random_device rd;
+					std::mt19937 gen(rd());
+
+					std::uniform_int_distribution<uint32_t> quantity_dist(0, 69);     // Instructions per block
+					std::uniform_int_distribution<uint32_t> opcode_dist(0, 37);       // 37 supported instructions
+					std::uniform_int_distribution<uint32_t> imm_dist(1, 100);         // Range for randomizing immediate values
+					std::uniform_int_distribution<uint32_t> shift_dist(0, 69);        // Range for randomizing bitwise values
+
+					// Junk Code In
 					a.push(regx);
 					a.pushf();
 
-					a.xor_(regx, random_value);
-					a.inc(regx);
-					a.dec(regx);
-					a.add(regx, random_value);
-					a.sub(regx, random_value);
+					// Generating number of instructions for the junk code block
+					auto numInstructions = quantity_dist(gen);
+
+					for (auto i = 0; i < numInstructions; ++i) {
+
+						/*
+							Generating random values for the opcode, immediate value, and displacement value (bitwise).
+						*/
+						auto opcode = opcode_dist(gen);
+						auto value = imm_dist(gen);
+						auto shift = shift_dist(gen);
+
+						// Choosing an opcode to use for randomizing the junk code
+						switch (opcode) {
+
+							case 0:  a.add(regx, value); break;
+							case 1:  a.sub(regx, value); break;
+							case 2:  a.imul(regx, value); break;
+							case 3:  a.xor_(regx, value); break;
+							case 4:  a.or_(regx, value); break;
+							case 5:  a.and_(regx, value); break;
+							case 6:  a.not_(regx); break;
+							case 7:  a.neg(regx); break;
+							case 8:  a.shl(regx, shift); break;
+							case 9:  a.shr(regx, shift); break;
+							case 10: a.sar(regx, shift); break;
+							case 11: a.rol(regx, shift); break;
+							case 12: a.ror(regx, shift); break;
+							case 13: a.inc(regx); break;
+							case 14: a.dec(regx); break;
+							case 15: a.test(regx, value); break;
+							case 16: a.cmp(regx, value); break;
+							case 17: a.lea(regx, asmjit::x86::ptr(regx, value)); break;
+							case 18: a.nop(); break;
+							case 19: a.add(regx, regx); break;
+
+							/*
+								Additional instructions contributions coming directly from VMProtect mutation
+								(https://keowu.re/posts/Analyzing-Mutation-Coded-VM-Protect-and-Alcatraz-English/#analyzing-techniques-and-mutation-of-vm-protect)
+							*/
+							case 20: a.bt(regx, value); break;
+							case 21: a.bts(regx, value); break;
+							case 22: a.btc(regx, value); break;
+							case 23: a.movzx(regx.r32(), regx.r8()); break;
+							case 24: a.movsx(regx.r32(), regx.r8()); break;
+							case 25: a.movsxd(regx, regx.r32()); break;
+							case 26: a.cmovs(regx, regx); break;
+							case 27: a.cmovp(regx, regx); break;
+							case 28: a.sal(regx, shift); break;
+							case 29: a.rcl(regx, 1); break;
+							case 30: a.rcr(regx, 1); break;
+							case 31: a.stc(); break;
+							case 32: a.clc(); break;
+							case 33: a.cmc(); break;
+							case 34: a.cdqe(); break;
+							case 35: a.cbw(); break;
+							case 36: a.sbb(regx, value); break;
+							case 37: a.bsf(regx, regx); break;
+
+							default: break;
+						}
+					}
 
 					// Junk Code Out
 					a.popf();
