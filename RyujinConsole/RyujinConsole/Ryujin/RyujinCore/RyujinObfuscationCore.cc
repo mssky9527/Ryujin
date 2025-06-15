@@ -133,37 +133,6 @@ void RyujinObfuscationCore::obfuscateIat() {
 	*/
 	if (m_unusedRegisters.size() == 0) return;
 
-	auto findBlockId = [&](ZyanU8 uopcode, ZyanI64 value) -> std::pair<int, int> {
-
-		int block_id = 0;
-		int opcode_id = 0;
-
-		for (auto& block : m_proc.basic_blocks) {
-
-			opcode_id = 0;
-
-			for (auto& opcode : block.opcodes) {
-
-				auto data = opcode.data();
-				auto size = opcode.size();
-
-				if (data[0] == uopcode)  //0xFF ?
-
-					if (std::memcmp(&*(data + 2), &value, sizeof(uint32_t)) == 0) // Is it the same memory immediate?
-
-						return std::make_pair(block_id, opcode_id);
-				
-
-				opcode_id++;
-
-			}
-
-			block_id++;
-		}
-
-		return std::make_pair(-1, -1);
-	};
-
 	for (auto& block : m_obfuscated_bb) {
 
 		for (auto& instr : block.instructions) {
@@ -171,7 +140,7 @@ void RyujinObfuscationCore::obfuscateIat() {
 			if (instr.instruction.info.meta.category == ZYDIS_CATEGORY_CALL && instr.instruction.operands->type == ZYDIS_OPERAND_TYPE_MEMORY) {
 
 				// Finding the block info related to the obfuscated opcode
-				auto block_info = findBlockId(instr.instruction.info.opcode, instr.instruction.operands->mem.disp.value);
+				auto block_info = findBlockId(instr.instruction.info.opcode, instr.instruction.operands->mem.disp.value, 2, sizeof(uint32_t));
 
 				// Call to an invalid IAT in the list of basic blocks
 				if (block_info.first == -1 || block_info.second == -1) continue;
@@ -438,7 +407,388 @@ void RyujinObfuscationCore::insertJunkCode() {
 
 void RyujinObfuscationCore::insertVirtualization() {
 
-	//TODO
+	/*
+		1 - Converter instruções do procedimento e seus basic blocks para o bytecode da VM(cada instrução gera 8 bytes de bytecode).
+		2 - Substiuir a instrução por uma call para a rotina de interpretação da VM e passar os bytecodes via RCX. (levar em consideração o salvamento dos contextos de registradore e stack)
+		3 - Ser capaz de continuar a execução sem problemas integrando a rotina da VM com o código original a ser executado e não ofuscado
+		
+		4 - Essa rotina deve inserir a stub e bytecode da vm apenas. após isso teremos um processamento antes de salvar e corrigir relocações
+		para sermos capazes de encontrar o padrão da rotina de virtualização e colocar o endereço real do interpretador da VM para que a mesma funcione.
+
+
+		Basicamente essa é uma single-vm que:
+			Analisa a instrução em questão. extrair seu opcode e mapear para o da vm, extrair seus immediatos e armazenala em um unico conjunto
+			exemplo: 
+				0x48 -> mov -> bytecode
+				rbx ->  bytecode
+				10 -> valor
+
+			Exemplo de saída:
+				0x112210
+
+			Que sera atribuido ao valor de rcx:
+
+				push rcx
+				mov rcx, 112210h
+				call vmentry(mas um valor simbolico visto que não seria inserido o offset immediato aqui)
+				-> rax resultado vai no registrado em questão que continuaria o fluxo de execução ou receberia o resultado, nesse exemplo: rbx
+				pop rcx
+
+			Dessa forma o código continuaria
+	*/
+
+	// É uma instrução candidata a ser virtualizada pela minivm ??
+	auto isValidToSRyujinMiniVm = [&](RyujinInstruction instr) {
+
+		return instr.instruction.operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER && instr.instruction.operands[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE;
+	};
+
+	// Vamos mapear o registrador do Zydis para o ASMJIT
+	auto mapZydisToAsmjitGp = [&](ZydisRegister zydisReg) -> asmjit::x86::Gp {
+
+		switch (zydisReg) {
+
+			// RAX family
+			case ZYDIS_REGISTER_AL:
+			case ZYDIS_REGISTER_AH:
+			case ZYDIS_REGISTER_AX:
+			case ZYDIS_REGISTER_EAX:
+			case ZYDIS_REGISTER_RAX: return asmjit::x86::rax;
+
+			// RBX family
+			case ZYDIS_REGISTER_BL:
+			case ZYDIS_REGISTER_BH:
+			case ZYDIS_REGISTER_BX:
+			case ZYDIS_REGISTER_EBX:
+			case ZYDIS_REGISTER_RBX: return asmjit::x86::rbx;
+
+			// RCX family
+			case ZYDIS_REGISTER_CL:
+			case ZYDIS_REGISTER_CH:
+			case ZYDIS_REGISTER_CX:
+			case ZYDIS_REGISTER_ECX:
+			case ZYDIS_REGISTER_RCX: return asmjit::x86::rcx;
+
+			// RDX family
+			case ZYDIS_REGISTER_DL:
+			case ZYDIS_REGISTER_DH:
+			case ZYDIS_REGISTER_DX:
+			case ZYDIS_REGISTER_EDX:
+			case ZYDIS_REGISTER_RDX: return asmjit::x86::rdx;
+
+			// RSI family
+			case ZYDIS_REGISTER_SIL:
+			case ZYDIS_REGISTER_SI:
+			case ZYDIS_REGISTER_ESI:
+			case ZYDIS_REGISTER_RSI: return asmjit::x86::rsi;
+
+			// RDI family
+			case ZYDIS_REGISTER_DIL:
+			case ZYDIS_REGISTER_DI:
+			case ZYDIS_REGISTER_EDI:
+			case ZYDIS_REGISTER_RDI: return asmjit::x86::rdi;
+
+			// RBP family
+			case ZYDIS_REGISTER_BPL:
+			case ZYDIS_REGISTER_BP:
+			case ZYDIS_REGISTER_EBP:
+			case ZYDIS_REGISTER_RBP: return asmjit::x86::rbp;
+
+			// RSP family
+			case ZYDIS_REGISTER_SPL:
+			case ZYDIS_REGISTER_SP:
+			case ZYDIS_REGISTER_ESP:
+			case ZYDIS_REGISTER_RSP: return asmjit::x86::rsp;
+
+			// R8 family
+			case ZYDIS_REGISTER_R8B:
+			case ZYDIS_REGISTER_R8W:
+			case ZYDIS_REGISTER_R8D:
+			case ZYDIS_REGISTER_R8: return asmjit::x86::r8;
+
+			// R9 family
+			case ZYDIS_REGISTER_R9B:
+			case ZYDIS_REGISTER_R9W:
+			case ZYDIS_REGISTER_R9D:
+			case ZYDIS_REGISTER_R9: return asmjit::x86::r9;
+
+			// R10 family
+			case ZYDIS_REGISTER_R10B:
+			case ZYDIS_REGISTER_R10W:
+			case ZYDIS_REGISTER_R10D:
+			case ZYDIS_REGISTER_R10: return asmjit::x86::r10;
+
+			// R11 family
+			case ZYDIS_REGISTER_R11B:
+			case ZYDIS_REGISTER_R11W:
+			case ZYDIS_REGISTER_R11D:
+			case ZYDIS_REGISTER_R11: return asmjit::x86::r11;
+
+			// R12 family
+			case ZYDIS_REGISTER_R12B:
+			case ZYDIS_REGISTER_R12W:
+			case ZYDIS_REGISTER_R12D:
+			case ZYDIS_REGISTER_R12: return asmjit::x86::r12;
+
+			// R13 family
+			case ZYDIS_REGISTER_R13B:
+			case ZYDIS_REGISTER_R13W:
+			case ZYDIS_REGISTER_R13D:
+			case ZYDIS_REGISTER_R13: return asmjit::x86::r13;
+
+			// R14 family
+			case ZYDIS_REGISTER_R14B:
+			case ZYDIS_REGISTER_R14W:
+			case ZYDIS_REGISTER_R14D:
+			case ZYDIS_REGISTER_R14: return asmjit::x86::r14;
+
+			// R15 family
+			case ZYDIS_REGISTER_R15B:
+			case ZYDIS_REGISTER_R15W:
+			case ZYDIS_REGISTER_R15D:
+			case ZYDIS_REGISTER_R15: return asmjit::x86::r15;
+
+			default: break;
+		}
+
+	};
+
+	// Vamos traduzir uma instrução para o bytecode da MiniVm do Ryujin
+	auto translateToMiniVmBytecode = [&](ZydisRegister reg, ZyanU8 op, ZyanU64 value) {
+
+		ZyanU64 miniVmByteCode = 0;
+
+		switch (reg) {
+
+			case ZYDIS_REGISTER_EAX:
+			case ZYDIS_REGISTER_RAX: {
+
+				miniVmByteCode = 0x33; // reg = RAX
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_RBX: {
+
+				miniVmByteCode = 0x34; // reg = RBX
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_RCX: {
+			
+				miniVmByteCode = 0x35; // reg = RCX
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_RDX: {
+			
+				miniVmByteCode = 0x36; // reg = RDX
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_RSI: {
+			
+				miniVmByteCode = 0x37; // reg = RSI
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_RDI: {
+			
+				miniVmByteCode = 0x38; // reg = RDI
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_RBP: {
+			
+				miniVmByteCode = 0x39; // reg = RBP
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_RSP: {
+			
+				miniVmByteCode = 0x40; // reg = RSP
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_R8: {
+
+				miniVmByteCode = 0x41; // reg = R8
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_R9: { 
+
+				miniVmByteCode = 0x42; // reg = R9
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_R10: { 
+
+				miniVmByteCode = 0x43; // reg = R10
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_R11: { 
+				
+				miniVmByteCode = 0x44; // reg = R11
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_R12: { 
+				
+				miniVmByteCode = 0x45; // reg = R12
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_R13: { 
+				
+				miniVmByteCode = 0x46; // reg = R13
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_R14: { 
+				
+				miniVmByteCode = 0x47; // reg = R14
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+			case ZYDIS_REGISTER_R15: { 
+			
+				miniVmByteCode = 0x48; // reg = R15
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= op; // OP TYPE
+				miniVmByteCode <<= 8;
+				miniVmByteCode |= value; // valor
+
+				break;
+			}
+
+			default: break;
+		}
+
+
+		return miniVmByteCode;
+	};
+
+	// Inicializando o runtime do asmjit
+	asmjit::JitRuntime runtime;
+
+	for (auto& block : m_proc.basic_blocks) {
+		
+		for (auto& instr : block.instructions) {
+			
+			// Vector para armazenarmos os opcodes da MiniVm do Ryujin
+			std::vector<ZyanU8> minivm_enter;
+
+			// Operand type
+			ZyanU8 opType = 0;
+
+			// Encontrando o block info para o opcode atual
+			auto block_info = findBlockId(instr.instruction.info.opcode, instr.instruction.operands[1].imm.value.u, 2, sizeof(unsigned char));
+
+			// Caso não encontremos
+			if (block_info.first == -1 || block_info.second == -1) continue;
+
+			// Recuperando os opcodes originais desta instrução ao qual trabalhamos
+			auto& data = m_proc.basic_blocks[block_info.first].opcodes[block_info.second];
+
+			// Verificando por operands candidatos a serem virtualizados pela minivm
+			if (instr.instruction.info.mnemonic == ZYDIS_MNEMONIC_ADD && isValidToSRyujinMiniVm(instr)) opType = 1;
+			else if (instr.instruction.info.mnemonic == ZYDIS_MNEMONIC_SUB && isValidToSRyujinMiniVm(instr)) opType = 2;
+			else if (instr.instruction.info.mnemonic == ZYDIS_MNEMONIC_IMUL && isValidToSRyujinMiniVm(instr)) opType = 3;
+			else if (instr.instruction.info.mnemonic == ZYDIS_MNEMONIC_DIV && isValidToSRyujinMiniVm(instr)) opType = 4;
+
+			//Existe um VM Operator novo ?
+			if (opType != 0) {
+
+				// Inicializando para o asmjit gerar as instruções de nossa minivm
+				asmjit::CodeHolder code;
+				code.init(runtime.environment());
+				asmjit::x86::Assembler a(&code);
+
+				a.push(asmjit::x86::rcx);
+				a.mov(asmjit::x86::rcx, translateToMiniVmBytecode(instr.instruction.operands[0].reg.value, opType, instr.instruction.operands[1].imm.value.u));
+				a.mov(asmjit::x86::rax, 0x8888888888888888); // Endereço a ser substituido pelo endereço da nossa minivm
+				a.call(asmjit::x86::rax);
+				a.mov(mapZydisToAsmjitGp(instr.instruction.operands[0].reg.value), asmjit::x86::rax);
+				a.pop(asmjit::x86::rcx);
+
+				auto& opcodeBuffer = code.sectionById(0)->buffer();
+				const auto pOpcodeBuffer = opcodeBuffer.data();
+				minivm_enter.reserve(opcodeBuffer.size());
+
+				// Armazenando cada opcocde individual no nosso vector da minivm
+				for (auto i = 0; i < opcodeBuffer.size(); ++i) minivm_enter.push_back(static_cast<ZyanU8>(pOpcodeBuffer[i]));
+
+				// Sobrescrevendo opcodes antigos pelos novos
+				data.assign(minivm_enter.begin(), minivm_enter.end());
+
+				std::printf("[!] Inserting a new MiniVm on %s\n", instr.instruction.text);
+
+			}
+
+		}
+	
+	}
 
 }
 
@@ -458,21 +808,21 @@ BOOL RyujinObfuscationCore::Run() {
 	//Update basic blocks view based on the new obfuscated 
 	this->updateBasicBlocksContext();
 
-	//Obfuscate IAT for the configured procedures
-	if (m_config.m_isIatObfuscation) {
+	if (m_config.m_isVirtualized) {
 
-		// Obfuscate IAT
-		obfuscateIat();
+		// Insert Virtualization
+		insertVirtualization();
 
 		//Update our basic blocks context to rely 1-1 for the new obfuscated opcodes.
 		this->updateBasicBlocksContext();
 
 	}
 
-	if (m_config.m_isVirtualized) {
+	//Obfuscate IAT for the configured procedures
+	if (m_config.m_isIatObfuscation) {
 
-		// Insert Virtualization
-		insertVirtualization();
+		// Obfuscate IAT
+		obfuscateIat();
 
 		//Update our basic blocks context to rely 1-1 for the new obfuscated opcodes.
 		this->updateBasicBlocksContext();
