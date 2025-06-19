@@ -761,8 +761,21 @@ void RyujinObfuscationCore::insertVirtualization() {
 			// Is there a new VM Operator?
 			if (opType != 0) {
 
-				//TODO: Implementar algoritmo para ofuscar as constantes da PEB e do Bytecode da VM para um layer extra de segurança
-				//TODO: Tentar fazer a MiniVm Stub dinâmicamente
+				/*
+					Encrypting the PEB acessing fields
+				*/
+				std::mt19937 rng(std::random_device{}());
+				// A single random value of 2 bytes (uint16_t)
+				std::uniform_int_distribution<uint16_t> dist(0, 0xFFFFF);
+				uint16_t xorKey = dist(rng);
+
+				// Obfuscate PEB offset from automatic scan
+				// Xoring PEB Offset
+				unsigned char PebGsOffset = 0x60 ^ (xorKey & 0xFF);
+				// Xoring ImageBase offset
+				unsigned char ImageBasePeb = 0x10 ^ (xorKey & 0xFF);
+				// Xoring MiniVM Bytecode
+				ZyanU64 vmByteCode = translateToMiniVmBytecode(instr.instruction.operands[0].reg.value, opType, instr.instruction.operands[1].imm.value.u) ^ xorKey;
 
 				// Initializing asmjit to generate our minivm instructions
 				asmjit::CodeHolder code;
@@ -776,15 +789,21 @@ void RyujinObfuscationCore::insertVirtualization() {
 				// Storing in the first argument RCX the value of the register from the first operand of the mathematical operation
 				a.mov(asmjit::x86::rcx, mapZydisToAsmjitGp(instr.instruction.operands[0].reg.value));
 				// Storing in the second argument RDX the value of the bytecode sequence to be interpreted by the Ryujin MiniVM
-				a.mov(asmjit::x86::rdx, translateToMiniVmBytecode(instr.instruction.operands[0].reg.value, opType, instr.instruction.operands[1].imm.value.u));
+				a.mov(asmjit::x86::rdx, vmByteCode);
+				// Xor key for mini vmbytecode
+				a.xor_(asmjit::x86::rdx, asmjit::imm(xorKey));
 				// Using `rdgsbase rax` to store the base address of the GS segment in RAX
 				a.emit(asmjit::x86::Inst::kIdRdgsbase, asmjit::x86::rax);
-				// Adding to RAX the offset value for the PEB
-				a.add(asmjit::x86::rax, 0x60);
-				// Accessing and retrieving the PEB address to store it in RAX
+				// Adding to RAX the offset value for the PEB Xored
+				a.add(asmjit::x86::rax, PebGsOffset);
+				// Undoing the XOR operation with the obfuscated RAX value and the XOR key -> xor rax, lastByteXorKey
+				a.xor_(asmjit::x86::rax, asmjit::imm(xorKey & 0xFF));
+				// Accessing the resulting address to retrieve the PEB instance -> mov rax, [rax]
 				a.mov(asmjit::x86::rax, asmjit::x86::ptr(asmjit::x86::rax));
-				// Adding to RAX the "ImageBase" field of the PEB
-				a.add(asmjit::x86::rax, 0x10);
+				// Adding the obfuscated offset of the ImageBase xored field in the PEB -> add rax, ImageBasePeb
+				a.add(asmjit::x86::rax, ImageBasePeb);
+				// Undoing the XOR operation with the obfuscated value and the XOR key -> xor rax, lastByteXorKey
+				a.xor_(asmjit::x86::rax, asmjit::imm(xorKey & 0xFF));
 				// Accessing the "ImageBase" address in the PEB to obtain the actual value
 				a.mov(asmjit::x86::rax, asmjit::x86::ptr(asmjit::x86::rax));
 				// Adding to the "ImageBase" value a "default" offset that will later be overwritten by the actual offset of the MiniVM enter

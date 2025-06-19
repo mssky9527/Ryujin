@@ -162,7 +162,7 @@ bool Ryujin::run(const RyujinObfuscatorConfig& config) {
 	//Insert minivm enter routine
 	if (config.m_isVirtualized) {
 
-		// Ryujin MiniVM Routine -> TODO: MAKE THIS DYNAMIC
+		// Ryujin MiniVM Routine
 		std::vector<unsigned char> miniVmEnter {
 
 			0x48, 0x89, 0x54, 0x24, 0x10, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x48, 0x83,
