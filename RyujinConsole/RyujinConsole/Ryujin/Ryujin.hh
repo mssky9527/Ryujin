@@ -28,7 +28,7 @@ public:
 	Ryujin(const std::string& strInputFilePath, const std::string& strPdbFilePath, const std::string& strOutputFilePath);
 	bool run(const RyujinObfuscatorConfig& config);
 	void listRyujinProcedures();
-	~Ryujin();
+	~Ryujin() { }
 
 };
 

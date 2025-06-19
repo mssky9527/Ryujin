@@ -224,7 +224,25 @@ bool Ryujin::run(const RyujinObfuscatorConfig& config) {
 	}
 
 	// Encrypt all obfuscated code
-	if (config.m_isEncryptObfuscatedCode) todoAction();
+	/*
+		Para "encriptar" todo o código ofuscado:
+			1 - Vamos criptografar byte por byte do nosso vector que carrega os novos opcodes para a section.
+			2 - Vamos inserir a stub que descriptografa e seus referidos opcodes no vector de novos opcodes.
+			3 - Vamos substituir o entrypoint original pela nossa stub. e nossa stub vai saltar no entrypoint original após desofuscar.
+			4 - Teremos o código pronto a ser devidamente executado.
+	*/
+	if (config.m_isEncryptObfuscatedCode) {
+	
+		// Logica para criptografar código executável.
+		for (auto& byte : opcodesWithRelocsFixed)
+			byte ^= 0x37; // TODO: Make this better - XOR não é criptografia.
+
+		// Log
+		std::printf("[!] OEP: %llx - Inserting Decryption code routine on: %llx\n", imgNt->OptionalHeader.AddressOfEntryPoint, offsetVA);
+
+		
+
+	}
 
 	//Process new opcodes
 	peSections.ProcessOpcodesNewSection(opcodesWithRelocsFixed);
@@ -261,9 +279,5 @@ void Ryujin::listRyujinProcedures() {
 	}
 
 	std::printf("==========================\n");
-
-}
-
-Ryujin::~Ryujin() {
 
 }

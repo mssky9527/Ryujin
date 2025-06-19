@@ -1194,18 +1194,26 @@ void RyujinObfuscationCore::InsertMiniVmEnterProcedureAddress(uintptr_t imageBas
 	//Inserting Ryujin MiniVm Address on each vm entry reference
 	if (m_config.m_isVirtualized) {
 		
+		// Data and sizes of the opcodes to be worked on
 		auto size = new_opcodes.size();
 		auto data = new_opcodes.data();
 
+		// Signature of the pattern that we must replace with the referenced RVA of our MiniVmEntry
 		unsigned char ucSignature[]{ 0x48, 0x05, 0x88, 0x00, 0x00, 0x00 };
 
+		// Let's search for the pattern to replace
 		for (auto i = 0; i < size; i++)
 
+			// If we find it
 			if (std::memcmp(&*(data + i), ucSignature, 6) == 0) {
 
+				// Just log it
 				std::printf("[OK] Inserting MiniVmEnter at %llx\n", imageBase + virtualAddress + i);
 				
+				// We will remove the value 0x88 and ensure there are no other offsets
 				std::memset(&*(data + i + 2), 0, 4);
+
+				// Finally, we will insert our new RVA for the MiniVmEntry procedure
 				std::memcpy(&*(data + i + 2), &virtualAddress, sizeof(uint32_t));
 			
 			}
