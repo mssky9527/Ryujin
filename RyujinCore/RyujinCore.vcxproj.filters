@@ -1,0 +1,93 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Ryujin">
+      <UniqueIdentifier>{75c5a07c-f3a0-4780-a2d6-82b6c759efbb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Ryujin\Models">
+      <UniqueIdentifier>{cf207520-50f1-4f26-9b7d-0a6ad7fd1fb1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Ryujin\PDB">
+      <UniqueIdentifier>{81beb1cb-a0b6-4118-8a39-bd558f8f5522}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Ryujin\RyujinCore">
+      <UniqueIdentifier>{49f30cd7-8ed7-42f3-b599-9f7fddf5c547}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Ryujin\Utils">
+      <UniqueIdentifier>{4284f652-8f94-493b-acb5-178e17622669}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="cpp.hint" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="RyujinCore.hh">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\Ryujin.hh">
+      <Filter>Ryujin</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\Models\RyujinBasicBlock.hh">
+      <Filter>Ryujin\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\Models\RyujinInstruction.hh">
+      <Filter>Ryujin\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\Models\RyujinObfuscatorConfig.hh">
+      <Filter>Ryujin\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\Models\RyujinProcedure.hh">
+      <Filter>Ryujin\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\Utils\RyujinPESections.hh">
+      <Filter>Ryujin\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\Utils\RyujinUtils.hh">
+      <Filter>Ryujin\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\RyujinCore\BasicBlockerBuilder.hh">
+      <Filter>Ryujin\RyujinCore</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\RyujinCore\RyujinObfuscationCore.hh">
+      <Filter>Ryujin\RyujinCore</Filter>
+    </ClInclude>
+    <ClInclude Include="Ryujin\PDB\RyujinPdbParsing.hh">
+      <Filter>Ryujin\PDB</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="RyujinCore.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dllmain.cc">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Ryujin\Ryujin.cc">
+      <Filter>Ryujin</Filter>
+    </ClCompile>
+    <ClCompile Include="Ryujin\Utils\RyujinPESections.cc">
+      <Filter>Ryujin\Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Ryujin\Utils\RyujinUtils.cc">
+      <Filter>Ryujin\Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="Ryujin\RyujinCore\BasicBlockerBuilder.cc">
+      <Filter>Ryujin\RyujinCore</Filter>
+    </ClCompile>
+    <ClCompile Include="Ryujin\RyujinCore\RyujinObfuscationCore.cc">
+      <Filter>Ryujin\RyujinCore</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
