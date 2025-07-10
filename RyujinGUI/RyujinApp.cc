@@ -185,6 +185,20 @@ bool RyujinApp::OnInit() {
     
     );
 
+    m_isAntiDebugWithTroll = DrawnStyledCheckbox(
+
+        panel,
+        "Antidebug(User + Kernel) + Troll Reversers"
+
+    );
+
+    m_isAntiDebugNormal = DrawnStyledCheckbox(
+
+        panel,
+        "Antidebug(User + Kernel) + Terminate"
+
+    );
+
     optionsSizer->Add(
         
         m_virtualize
@@ -214,6 +228,16 @@ bool RyujinApp::OnInit() {
         
         m_ignoreOriginalCodeRemove
     
+    );
+    optionsSizer->Add(
+
+        m_isAntiDebugWithTroll
+
+    );
+    optionsSizer->Add(
+
+        m_isAntiDebugNormal
+
     );
     optionsBox->Add(
         
@@ -661,20 +685,49 @@ auto RyujinApp::BindRunEvent(wxFrame* frame) -> void {
             core.m_isRandomSection = m_randomSection->IsChecked();
             core.m_isVirtualized = m_virtualize->IsChecked();
 
-            // Procedures to obfuscate
-            std::vector<std::string> procsToObfuscate;
-            auto count = m_procList->GetCount();
-            procsToObfuscate.reserve(count);
+            if (m_isAntiDebugWithTroll->IsChecked()) {
 
-            for (auto i = 0; i < count; ++i) {
-
-                auto item = m_procList->GetString(i);
-                procsToObfuscate.push_back(item.ToStdString());
+                core.m_isAntiDebug = TRUE;
+                core.m_isTrollRerversers = TRUE;
             
-            }
-            core.m_strProceduresToObfuscate.assign(procsToObfuscate.begin(), procsToObfuscate.end());
+            } 
+            
+            if (m_isAntiDebugNormal->IsChecked()) {
 
-            auto bSuccess = core.RunRyujin(m_input->GetValue().ToStdString(), m_pdb->GetValue().ToStdString(), m_output->GetValue().ToStdString(), core);
+                core.m_isAntiDebug = TRUE;
+                core.m_isTrollRerversers = FALSE;
+
+            }
+
+            auto count = m_procList->GetCount();
+            int index = 0;
+            for (auto i = 0; i < count && index < MAX_PROCEDURES; ++i) {
+
+                auto item = m_procList->GetString(i).ToStdString();
+
+                if (!item.empty()) {
+                
+                    strncpy_s(
+
+                        core.m_strProceduresToObfuscate.procedures[index],
+                        item.c_str(),
+                        MAX_PROCEDURE_NAME_LEN - 1
+                    
+                    );
+                
+                    ++index;
+                
+                }
+
+            }
+
+            core.m_strProceduresToObfuscate.procedureCount = index;
+
+            std::string input = m_input->GetValue().ToStdString();
+            std::string pdb = m_pdb->GetValue().ToStdString();
+            std::string output = m_output->GetValue().ToStdString();
+
+            auto bSuccess = core.RunRyujin(input, pdb, output, core);
 
             frame->CallAfter([=]() {
                 

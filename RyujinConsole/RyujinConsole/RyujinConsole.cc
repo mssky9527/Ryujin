@@ -87,29 +87,31 @@ auto main(int argc, char* argv[]) -> int {
     config.m_isTrollRerversers = has_flag(args, "--troll");
     config.m_isAntiDebug = has_flag(args, "--AntiDebug");
 
-    std::vector<std::string> procsToObfuscate;
     if (has_flag(args, "--procs")) {
-
         auto rawList = args["--procs"];
         size_t start = 0;
         size_t end = 0;
-        while ((end = rawList.find(',', start)) != std::string::npos) {
-        
-            procsToObfuscate.push_back(rawList.substr(start, end - start));
+        int index = 0;
+
+        while ((end = rawList.find(',', start)) != std::string::npos && index < MAX_PROCEDURES) {
+            auto procName = rawList.substr(start, end - start);
+            strncpy_s(config.m_strProceduresToObfuscate.procedures[index], procName.c_str(), MAX_PROCEDURE_NAME_LEN - 1);
+            ++index;
             start = end + 1;
-        
         }
-        
-        procsToObfuscate.push_back(rawList.substr(start));
+
+        if (index < MAX_PROCEDURES) {
+            auto procName = rawList.substr(start);
+            strncpy_s(config.m_strProceduresToObfuscate.procedures[index], procName.c_str(), MAX_PROCEDURE_NAME_LEN - 1);
+            ++index;
+        }
+
+        config.m_strProceduresToObfuscate.procedureCount = index;
     }
     else {
-        
         print_help();
-        
         return 0;
     }
-
-    config.m_strProceduresToObfuscate.assign(procsToObfuscate.begin(), procsToObfuscate.end());
 
     auto bSuccess = config.RunRyujin(input, pdb, output, config);
     std::printf("Ryujin core returned: %d\n", bSuccess);

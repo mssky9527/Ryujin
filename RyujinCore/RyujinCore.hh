@@ -5,4 +5,4 @@
 #endif
 #include "Ryujin/Ryujin.hh"
 
-RYUJINCORE_API BOOL __stdcall RunRyujinCore(const std::string& strInputFilePath, const std::string& strPdbFilePath, const std::string& strOutputFilePath, RyujinObfuscatorConfig &config);
+RYUJINCORE_API BOOL __stdcall RunRyujinCore(const char* strInputFilePath, const char* strPdbFilePath, const char* strOutputFilePath, RyujinObfuscatorConfig &config);

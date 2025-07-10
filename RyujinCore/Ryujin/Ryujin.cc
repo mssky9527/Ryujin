@@ -83,7 +83,7 @@ bool Ryujin::run(const RyujinObfuscatorConfig& config) {
 		return FALSE;
 	}
 
-	if (config.m_strProceduresToObfuscate.size() == 0) {
+	if (config.m_strdProceduresToObfuscate.size() == 0) {
 
 		::OutputDebugStringA(
 
@@ -98,9 +98,9 @@ bool Ryujin::run(const RyujinObfuscatorConfig& config) {
 
 	for (auto& proc : m_ryujinProcedures) {
 
-		auto it = std::find(config.m_strProceduresToObfuscate.begin(), config.m_strProceduresToObfuscate.end(), proc.name);
+		auto it = std::find(config.m_strdProceduresToObfuscate.begin(), config.m_strdProceduresToObfuscate.end(), proc.name);
 
-		if (it == config.m_strProceduresToObfuscate.end()) continue;
+		if (it == config.m_strdProceduresToObfuscate.end()) continue;
 
 		std::printf(
 			

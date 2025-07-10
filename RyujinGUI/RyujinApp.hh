@@ -20,6 +20,8 @@ private:
     wxCheckBox* m_randomSection = nullptr;
     wxCheckBox* m_obfuscateIat = nullptr;
     wxCheckBox* m_ignoreOriginalCodeRemove = nullptr;
+    wxCheckBox* m_isAntiDebugWithTroll = nullptr;
+    wxCheckBox* m_isAntiDebugNormal = nullptr;
     wxListBox* m_procList = nullptr;
     wxGauge* m_progress = nullptr;
 
