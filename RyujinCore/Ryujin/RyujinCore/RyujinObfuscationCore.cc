@@ -1648,6 +1648,102 @@ void RyujinObfuscationCore::insertAntiDump() {
 				// Add the AntiDump stub
 				std::vector<unsigned char> antiDumpShellcode = {
 
+					/*
+						#pragma optimize("", off)
+						__declspec(noinline) __declspec(safebuffers) void AntiDumpShell() {
+						
+						    #ifdef _M_X64
+						    auto* peb = reinterpret_cast<PEB*>(__readgsqword(0x60));
+						    #else
+						    auto* peb = reinterpret_cast<PEB*>(__readfsdword(0x30));
+						    #endif
+						    if (!peb || !peb->Ldr) return;
+						
+						    wchar_t ntdllStr[] { 'n','t','d','l','l','.','d','l','l', 0 };
+						    char ntprotStr[] { 'N','t','P','r','o','t','e','c','t','V','i','r','t','u','a','l','M','e','m','o','r','y', 0 };
+						
+						    NtProtectVirtualMemory_t pNtProtect = nullptr;
+						
+						    auto* head = &peb->Ldr->InMemoryOrderModuleList;
+						    for (auto* link = head->Flink; link != head; link = link->Flink) {
+						
+						        auto* entry = CONTAINING_RECORD(link, LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks);
+						        if (!entry->BaseDllName.Buffer) continue;
+						
+						        auto* modName = entry->BaseDllName.Buffer;
+						        auto* target = ntdllStr;
+						        bool matched = true;
+						        for (; *target && *modName; ++target, ++modName) {
+						
+						            auto ca = (*modName >= 'A' && *modName <= 'Z') ? *modName + 0x20 : *modName;
+						            auto cb = (*target >= 'A' && *target <= 'Z') ? *target + 0x20 : *target;
+						            
+						            if (ca != cb) { matched = false; break; }
+						        
+						        }
+						        
+						        if (!matched || *target || *modName) continue;
+						
+						        auto* base = reinterpret_cast<BYTE*>(entry->DllBase);
+						        auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+						        auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+						        auto& ed = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+						        if (!ed.VirtualAddress) return;
+						
+						        auto* exp = reinterpret_cast<IMAGE_EXPORT_DIRECTORY*>(base + ed.VirtualAddress);
+						        auto* names = reinterpret_cast<DWORD*>(base + exp->AddressOfNames);
+						        auto* ords = reinterpret_cast<WORD*>(base + exp->AddressOfNameOrdinals);
+						        auto* funcs = reinterpret_cast<DWORD*>(base + exp->AddressOfFunctions);
+						
+						        for (auto i = 0; i < exp->NumberOfNames; i++) {
+						    
+						            auto* fn = reinterpret_cast<char*>(base + names[i]);
+						
+						            bool match = true;
+						            for (auto j = 0; ntprotStr[j] || fn[j]; ++j)
+						                if (ntprotStr[j] != fn[j]) { match = false; break; }
+						            
+						            if (match) {
+						
+						                pNtProtect = reinterpret_cast<NtProtectVirtualMemory_t>(base + funcs[ords[i]]);
+						
+						                break;
+						            }
+						
+						        
+						        }
+						        break;
+						    
+						    }
+						
+						    if (!pNtProtect) return;
+						
+						    auto* imgDos = reinterpret_cast<IMAGE_DOS_HEADER*>(peb->ImageBaseAddress);
+						    auto* ntHeaders = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(imgDos) + imgDos->e_lfanew);
+						    auto* sectionHeaders = IMAGE_FIRST_SECTION(ntHeaders);
+						
+						    auto headerSize = sizeof(IMAGE_DOS_HEADER);
+						    ULONG oldProtect;
+						    PVOID baseAddr = imgDos;
+						
+						    if (pNtProtect(reinterpret_cast<HANDLE>(-1), &baseAddr, &headerSize, PAGE_READWRITE, &oldProtect) == 0) {
+						
+						        for (auto i = 0; i < ntHeaders->FileHeader.NumberOfSections; ++i) {
+						
+						            auto* ptr = reinterpret_cast<uint8_t*>(&sectionHeaders[i]);
+						
+						            for (auto j = 0; j < sizeof(IMAGE_SECTION_HEADER); ++j)
+						                *ptr++ = 0;
+						
+						        }
+						
+						        pNtProtect(reinterpret_cast<HANDLE>(-1), &baseAddr, &headerSize, oldProtect, &oldProtect);
+						
+						    }
+						
+						}
+						#pragma optimize("", on)
+					*/
 					0x48, 0x81, 0xEC, 0x48, 0x01, 0x00, 0x00, 0x65, 0x48, 0x8B, 0x04, 0x25,
 					0x60, 0x00, 0x00, 0x00, 0x48, 0x89, 0x84, 0x24, 0x98, 0x00, 0x00, 0x00,
 					0x48, 0x83, 0xBC, 0x24, 0x98, 0x00, 0x00, 0x00, 0x00, 0x74, 0x0F, 0x48,
