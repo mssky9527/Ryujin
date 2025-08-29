@@ -17,7 +17,7 @@ class RyujinObfuscationCore {
 
 private:
 	const int MAX_PADDING_SPACE_INSTR = 14;
-	const int MAX_JUNK_GENERATION_ITERATION = 5;
+	const int MAX_JUNK_GENERATION_ITERATION = 8;
 	std::vector<ZydisRegister> m_unusedRegisters;
 	std::vector<RyujinBasicBlock> m_obfuscated_bb;
 	uintptr_t m_ProcImageBase;

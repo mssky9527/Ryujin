@@ -67,12 +67,13 @@ Options:
   --Troll                   Crashes the entire OS if a debugger is detected (requires --AntiDebug).
   --AntiDump                Inserts anti-dump mechanisms that break the binary in memory, making dumps harder to analyze.
   --MemoryProtection        Protects obfuscated code against in-memory or on-disk patching.
+  --HVPass                  Protect some parts of Ryujin using Microsoft Hypervisor APIs
   --procs <comma,separated,names>  Procedures to obfuscate (default: main, invoke_main, ...)
 
   --help                    Show this help message
 
 In Action Usage Example:
-    RyujinConsole.exe --input C:\\Users\\Keowu\\Documents\\GitHub\\Ryujin\\compiled\\release\\DemoObfuscation.exe --pdb C:\\Users\\Keowu\\Documents\\GitHub\\Ryujin\\compiled\\release\\RyujinConsole.pdb --output C:\\Users\\Keowu\\Documents\\GitHub\\Ryujin\\compiled\\release\\DemoObfuscation.ryujin.exe --virtualize --junk --encrypt --AntiDebug --troll --AntiDump --procs main,sub,subadd,sum,invoke_main,__scrt_common_main,j___security_init_cookie
+    RyujinConsole.exe --input C:\\Users\\Keowu\\Documents\\GitHub\\Ryujin\\compiled\\release\\DemoObfuscation.exe --pdb C:\\Users\\Keowu\\Documents\\GitHub\\Ryujin\\compiled\\release\\RyujinConsole.pdb --output C:\\Users\\Keowu\\Documents\\GitHub\\Ryujin\\compiled\\release\\DemoObfuscation.ryujin.exe --virtualize --junk --encrypt --AntiDebug --troll --AntiDump --iat --HVPass --procs main,sub,subadd,sum,invoke_main,__scrt_common_main,j___security_init_cookie
 
 )";
 
@@ -131,6 +132,7 @@ auto main(int argc, char* argv[]) -> int {
     config.m_isAntiDebug = has_flag(args, "--AntiDebug");
     config.m_isAntiDump = has_flag(args, "--AntiDump");
     config.m_isMemoryProtection = has_flag(args, "--MemoryProtection");
+    config.m_isHVPass = has_flag(args, "--HVPass");
 
     // Registering a new custom pass for invocation via callback
     config.RegisterCallback(RyujinCustomPassDemo);

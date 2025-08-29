@@ -18,54 +18,139 @@ RyujinProcedure RyujinObfuscationCore::getProcessedProc() {
 
 BOOL RyujinObfuscationCore::extractUnusedRegisters() {
 
-	std::vector<ZydisRegister> candidateRegs = {
+	// List of all general-purpose registers considered as candidates for junk/mutation during comparison.
+	const std::vector<ZydisRegister> candidateGprRegs = {
 
-			ZYDIS_REGISTER_RAX,
-			ZYDIS_REGISTER_RCX,
-			ZYDIS_REGISTER_RDX,
-			ZYDIS_REGISTER_RBX,
-			ZYDIS_REGISTER_RSI,
-			ZYDIS_REGISTER_RDI,
-			ZYDIS_REGISTER_R8,
-			ZYDIS_REGISTER_R9,
-			ZYDIS_REGISTER_R10,
-			ZYDIS_REGISTER_R11,
-			ZYDIS_REGISTER_R12,
-			ZYDIS_REGISTER_R13,
-			ZYDIS_REGISTER_R14,
-			ZYDIS_REGISTER_R15,
-
+		ZYDIS_REGISTER_RAX, ZYDIS_REGISTER_RCX, ZYDIS_REGISTER_RDX,
+		ZYDIS_REGISTER_RBX, ZYDIS_REGISTER_RSI, ZYDIS_REGISTER_RDI,
+		ZYDIS_REGISTER_R8,  ZYDIS_REGISTER_R9,  ZYDIS_REGISTER_R10,
+		ZYDIS_REGISTER_R11, ZYDIS_REGISTER_R12, ZYDIS_REGISTER_R13,
+		ZYDIS_REGISTER_R14, ZYDIS_REGISTER_R15
+	
 	};
+
+	// List of XMM registers considered as candidates for junk/mutation during comparison.
+	const std::vector<ZydisRegister> candidateXmmRegs = {
+
+		ZYDIS_REGISTER_XMM0,  ZYDIS_REGISTER_XMM1,  ZYDIS_REGISTER_XMM2,  ZYDIS_REGISTER_XMM3,
+		ZYDIS_REGISTER_XMM4,  ZYDIS_REGISTER_XMM5,  ZYDIS_REGISTER_XMM6,  ZYDIS_REGISTER_XMM7,
+		ZYDIS_REGISTER_XMM8,  ZYDIS_REGISTER_XMM9,  ZYDIS_REGISTER_XMM10, ZYDIS_REGISTER_XMM11,
+		ZYDIS_REGISTER_XMM12, ZYDIS_REGISTER_XMM13, ZYDIS_REGISTER_XMM14, ZYDIS_REGISTER_XMM15
+	
+	};
+
+	m_unusedRegisters.clear();
 
 	std::set<ZydisRegister> usedRegs;
 
-	for (auto blocks : m_proc.basic_blocks) {
+	// Regardless of everything, the stack manipulation registers RSP and RBP will always be considered as used.
+	usedRegs.insert(ZYDIS_REGISTER_RSP);
+	usedRegs.insert(ZYDIS_REGISTER_RBP);
 
-		for (auto instr : blocks.instructions) {
+	for (const auto& block : m_proc.basic_blocks) {
 
-			for (auto i = 0; i < instr.instruction.info.operand_count; ++i) {
+		for (const auto& instr : block.instructions) {
 
+			const auto& dinfo = instr.instruction.info;
+			const uint8_t opcount = dinfo.operand_count;
+
+			for (uint8_t i = 0; i < opcount; ++i) {
+		
 				const ZydisDecodedOperand& op = instr.instruction.operands[i];
 
-				if (op.type == ZYDIS_OPERAND_TYPE_REGISTER) usedRegs.insert(op.reg.value);
-				else if (op.type == ZYDIS_OPERAND_TYPE_POINTER) {
+				// Registers with explicit operands
+				if (op.type == ZYDIS_OPERAND_TYPE_REGISTER) {
 
-					if (op.mem.base != ZYDIS_REGISTER_NONE) usedRegs.insert(op.mem.base);
-					if (op.mem.index != ZYDIS_REGISTER_NONE) usedRegs.insert(op.mem.index);
+					ZydisRegister reg = op.reg.value;
+					ZydisRegisterClass cls = ZydisRegisterGetClass(reg);
+
+					// Normalizing GPRs to GPR64 registers
+					if (cls == ZYDIS_REGCLASS_GPR8 || cls == ZYDIS_REGCLASS_GPR16 || cls == ZYDIS_REGCLASS_GPR32 || cls == ZYDIS_REGCLASS_GPR64) {
+
+						int16_t id = ZydisRegisterGetId(reg);
+
+						// Considering the lower-nibble registers
+						if (cls == ZYDIS_REGCLASS_GPR8 && id >= 4 && id <= 7)
+							id -= 4;
+
+						ZydisRegister reg64 = ZydisRegisterEncode(ZYDIS_REGCLASS_GPR64, id);
+						if (reg64 != ZYDIS_REGISTER_NONE) usedRegs.insert(reg64);
+
+					}
+					// Fetching XMM registers
+					else if (cls == ZYDIS_REGCLASS_XMM)
+						usedRegs.insert(reg);
+					// Checking for segment registers
+					else if (cls == ZYDIS_REGCLASS_SEGMENT)
+						usedRegs.insert(reg);
+				}
+				// Registers in use with memory operands
+				else if (op.type == ZYDIS_OPERAND_TYPE_MEMORY) {
+
+					if (op.mem.base != ZYDIS_REGISTER_NONE) {
+
+						ZydisRegister base = op.mem.base;
+						ZydisRegisterClass cls = ZydisRegisterGetClass(base);
+
+						if (cls == ZYDIS_REGCLASS_GPR8 || cls == ZYDIS_REGCLASS_GPR16 || cls == ZYDIS_REGCLASS_GPR32 || cls == ZYDIS_REGCLASS_GPR64) {
+
+							int16_t id = ZydisRegisterGetId(base);
+							ZydisRegister base64 = ZydisRegisterEncode(ZYDIS_REGCLASS_GPR64, id);
+							if (base64 != ZYDIS_REGISTER_NONE) usedRegs.insert(base64);
+
+						}
+						else
+							usedRegs.insert(base);
+
+					}
+
+					// Collecting index registers
+					if (op.mem.index != ZYDIS_REGISTER_NONE) {
+
+						ZydisRegister idx = op.mem.index;
+						ZydisRegisterClass cls = ZydisRegisterGetClass(idx);
+
+						if (cls == ZYDIS_REGCLASS_GPR8 || cls == ZYDIS_REGCLASS_GPR16 || cls == ZYDIS_REGCLASS_GPR32 || cls == ZYDIS_REGCLASS_GPR64) {
+
+							int16_t id = ZydisRegisterGetId(idx);
+							ZydisRegister idx64 = ZydisRegisterEncode(ZYDIS_REGCLASS_GPR64, id);
+							if (idx64 != ZYDIS_REGISTER_NONE) usedRegs.insert(idx64);
+						
+						}
+						else
+							usedRegs.insert(idx);
+					
+					}
+
+					// Hackfix for segment registers like: cs:[rax]
+					if (op.mem.segment != ZYDIS_REGISTER_NONE)
+						usedRegs.insert(op.mem.segment);
 
 				}
-
 			}
-
 		}
-
 	}
 
-	ZydisRegister freeReg = ZYDIS_REGISTER_NONE;
-	for (auto reg : candidateRegs)
-		if (usedRegs.count(reg) == 0) m_unusedRegisters.push_back(reg);
+	/*
+	   Based on the collected registers, compare each register with the list of used registers
+	   so we can build the unique set of used registers.
+	*/
+	for (ZydisRegister r : candidateGprRegs)
+		if (usedRegs.count(r) == 0)
+			m_unusedRegisters.push_back(r);
 
-	return m_unusedRegisters.size() >= 2; //Theres unused regs for be used by us ?
+	/*
+	*  TEMPORARILY DISABLED until Ryujin implements support for multimedia registers.
+	*
+	*  Based on the collected XMM registers, compare each register with the list of used XMM registers
+	*  to build the unique set of used XMM registers.
+	*/
+	//for (ZydisRegister r : candidateXmmRegs)
+	//    if (usedRegs.count(r) == 0)
+	//        m_unusedRegisters.push_back(r);
+
+	// We need at least 2 registers in order for obfuscation to work.
+	return (m_unusedRegisters.size() >= 2); // Seriously, Keowu? Yes. We need room to run some passes.
 }
 
 void RyujinObfuscationCore::addPaddingSpaces() {
@@ -295,7 +380,7 @@ void RyujinObfuscationCore::insertJunkCode() {
 					
 					// Ignore stack unused registers, if the feature for extracting unused register fail
 					if (idx == 4 /*RSP*/ || idx == 5 /*RBP*/) continue;
-
+	
 					// Converting GB Register Index to a GB Register
 					auto regx = a.gpz(uint32_t(idx));
 
@@ -370,13 +455,33 @@ void RyujinObfuscationCore::insertJunkCode() {
 							case 31: a.stc(); break;
 							case 32: a.clc(); break;
 							case 33: a.cmc(); break;
-							case 34: a.cdqe(); break;
-							case 35: a.cbw(); break;
+
+							//////////////////////////
+							// Different logic for these registers because they overwrite RAX
+							//--------------------------------------------------
+							case 34: {
+								a.push(asmjit::x86::rax);
+								a.pushf();
+								a.cdqe();
+								a.popf();
+								a.pop(asmjit::x86::rax);
+								break;
+							}
+							case 35: {
+								a.push(asmjit::x86::rax);
+								a.pushf();
+								a.cbw();
+								a.popf();
+								a.pop(asmjit::x86::rax);
+								break;
+							}
+							///////////////////////////////
 							case 36: a.sbb(regx, value); break;
 							case 37: a.bsf(regx, regx); break;
 
 							default: break;
 						}
+
 					}
 
 					// Junk Code Out
@@ -788,11 +893,13 @@ void RyujinObfuscationCore::insertVirtualization() {
 
 				// Breaking Decompilers
 				insertBreakDecompilers(a);
-
+				
 				// Saving the current value of RCX
 				a.push(asmjit::x86::rcx);
 				// Saving the current value of RDX
 				a.push(asmjit::x86::rdx);
+				// Setup stack for MS HV Code MiniVMm stub
+				if (m_config.m_isHVPass) a.sub(asmjit::x86::rsp, 0x28);
 				// Storing in the first argument RCX the value of the register from the first operand of the mathematical operation
 				a.mov(asmjit::x86::rcx, mapZydisToAsmjitGp(instr.instruction.operands[0].reg.value));
 				// Storing in the second argument RDX the value of the bytecode sequence to be interpreted by the Ryujin MiniVM
@@ -819,6 +926,8 @@ void RyujinObfuscationCore::insertVirtualization() {
 				a.call(asmjit::x86::rax);
 				// Storing the result of the MiniVM execution stored in RAX into the correct register to continue the normal execution flow
 				a.mov(mapZydisToAsmjitGp(instr.instruction.operands[0].reg.value), asmjit::x86::rax);
+				// Setup stack for MS HV Code MiniVMm stub
+				if (m_config.m_isHVPass) a.add(asmjit::x86::rsp, 0x28);
 				// Restoring the original value of RDX
 				a.pop(asmjit::x86::rdx);
 				// Restoring the original value of RCX
@@ -2653,21 +2762,45 @@ void RyujinObfuscationCore::applyRelocationFixupsToInstructions(uintptr_t imageB
 					auto size = new_opcodes.size();
 					auto data = new_opcodes.data();
 
+					//Avoid memory op for stack
+					if (instruction.instruction.operands->mem.base == ZYDIS_REGISTER_RSP) {
+
+						std::printf("Invalid relocation fix candidate for -> %s\n", instruction.instruction.text);
+
+						continue;
+					}
+
 					// Getting the memory immediate offset value to build the signature
 					const uint32_t memmory_immediate_offset = mem->disp.value;
 
-					// Creating a signature to search for the offset in the obfuscated opcodes
+					ZyanI64 offset = 0;
 					unsigned char ucOpcodeSignature[7]{ 0 };
-					std::memcpy(&ucOpcodeSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 3); // 3 BYTES do opcode relativo ao LEA ou MOV
-					std::memcpy(&*(ucOpcodeSignature + 3), &memmory_immediate_offset, sizeof(memmory_immediate_offset));
 
-					// Finding the offset of the "LEA" or "MOV" that uses memory-relative addressing
-					const ZyanI64 offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 7);
+					// If original instruction is not a mov reg, cs[](beacuse it has 6 not 7 bytes)
+					if (*reinterpret_cast<unsigned char*>(instruction.addressofinstruction) != 0x8B) {
+
+						// Creating a signature to search for the offset in the obfuscated opcodes
+						std::memcpy(&ucOpcodeSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 3); // 3 BYTES do opcode relativo ao LEA ou MOV
+						std::memcpy(&*(ucOpcodeSignature + 3), &memmory_immediate_offset, sizeof(memmory_immediate_offset));
+
+						// Finding the offset of the "LEA" or "MOV" that uses memory-relative addressing
+						offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 7);
+
+					}
+					else {
+
+						// Creating a signature to search for the offset in the obfuscated opcodes
+						std::memcpy(&ucOpcodeSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 6); // 6 bytes do opcode relativo MOV CODE SEGMENT: mov reg, cs:addr
+
+						// Finding the offset of the "MOV reg, cs:addr" that uses memory-relative addressing
+						offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 6);
+
+					}
 
 					// If we don't find any offset, there may be an issue or bug.
 					if (offset == 0) {
 
-						std::printf("[X] Invalid lea reference or uknown lea detected.....\n");
+						std::printf("[X] Invalid lea/mov reference or uknown lea/mov detected.....\n");
 
 						continue;
 					}
@@ -2694,11 +2827,180 @@ void RyujinObfuscationCore::applyRelocationFixupsToInstructions(uintptr_t imageB
 					const uintptr_t new_memory_immediate = target_original - new_obfuscated_rip;
 
 					// Fixing the immediate value for the "LEA" or "MOV" instruction with the corrected relative immediate value
-					std::memcpy(&*(data + offset + 3), &new_memory_immediate, sizeof(uint32_t)); // 3 bytes for the size of the LEA or MOV opcode
+					if (*reinterpret_cast<unsigned char*>(instruction.addressofinstruction) != 0x8B)
+						std::memcpy(&*(data + offset + 3), &new_memory_immediate, sizeof(uint32_t)); // 3 bytes for the size of the LEA or MOV opcode
+					else
+						std::memcpy(&*(data + offset + 2), &new_memory_immediate, sizeof(uint32_t)); // 3 bytes for the size of the LEA or MOV opcode
 
 					std::printf("[OK] Fixing -> %s - from %X to %X\n", instruction.instruction.text, mem->disp.value, new_memory_immediate);
 
 				}
+
+			}
+			else if ((instruction.instruction.info.mnemonic == ZYDIS_MNEMONIC_MOV || instruction.instruction.info.mnemonic == ZYDIS_MNEMONIC_LEA) && instruction.instruction.operands->type == ZYDIS_OPERAND_TYPE_MEMORY && instruction.instruction.operands->mem.type == ZYDIS_MEMOP_TYPE_MEM) {
+
+				if (instruction.instruction.info.length > 5) {
+
+					// References for data and vector size with obfuscated opcodes
+					auto size = new_opcodes.size();
+					auto data = new_opcodes.data();
+
+					const ZydisDecodedOperandMem* mem = &instruction.instruction.operands[0].mem;
+
+					//Avoid memory op for stack
+					if (instruction.instruction.operands->mem.base == ZYDIS_REGISTER_RSP) {
+
+						//std::printf("Invalid relocation fix candidate for -> %s\n", instruction.instruction.text);
+
+						continue;
+					}
+
+					// Getting the memory immediate offset value to build the signature
+					const uint32_t memmory_immediate_offset = mem->disp.value;
+
+					ZyanI64 offset = 0, fix_byte = 0;
+					unsigned char ucOpcodeSignature[11]{ 0 };
+
+					if (instruction.instruction.info.length == 6) {
+
+						std::memcpy(&ucOpcodeSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 6);
+
+						offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 6);
+
+						fix_byte = 2;
+
+					}
+					else if (instruction.instruction.info.length == 7) {
+
+						std::memcpy(&ucOpcodeSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 7);
+
+						offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 7);
+
+						fix_byte = 3;
+
+					}
+					else if (instruction.instruction.info.length == 10) {
+
+						std::memcpy(&ucOpcodeSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 10);
+
+						offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 10);
+
+						fix_byte = 2;
+
+					}
+					else {
+
+						std::printf("ERROR Unexpected Instruction mov cs[], reg/imm -> %s - %d\n", instruction.instruction.text, instruction.instruction.info.length);
+
+						continue;
+					}
+
+					// Retrieving the instruction address in the original section
+					const uintptr_t original_address = instruction.addressofinstruction;
+
+					// Calculating new address in the obfuscated section
+					const uintptr_t obfuscated_va_address = ((imageBase + virtualAddress + offset));
+
+					/*
+						Calculating new displacement for the immediate value
+					*/
+					// Calculating the address of the instruction following the original instruction
+					const uintptr_t original_rip = original_address + instruction.instruction.info.length;
+
+					// Calculating the original target address of the original instruction
+					const uintptr_t target_original = original_rip + memmory_immediate_offset;
+
+					// Calculating the address of the instruction following the obfuscated instruction
+					const uintptr_t new_obfuscated_rip = obfuscated_va_address + instruction.instruction.info.length;
+
+					// New memory immediate value for the instruction
+					const uintptr_t new_memory_immediate = target_original - new_obfuscated_rip;
+
+					// Fixing the immediate value for the "LEA" or "MOV" instruction with the corrected relative immediate value
+					std::memcpy(&*(data + offset + fix_byte), &new_memory_immediate, sizeof(uint32_t));
+
+					std::printf("[OK] Fixing -> %s - from %X to %X\n", instruction.instruction.text, mem->disp.value, new_memory_immediate);
+				}
+
+			}
+			else if ((instruction.instruction.info.mnemonic == ZYDIS_MNEMONIC_ADD || instruction.instruction.info.mnemonic == ZYDIS_MNEMONIC_SUB || instruction.instruction.info.mnemonic == ZYDIS_MNEMONIC_XOR) && (instruction.instruction.operands[0].type == ZYDIS_OPERAND_TYPE_MEMORY || instruction.instruction.operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY)) {
+
+
+					// References for data and vector size with obfuscated opcodes
+					auto size = new_opcodes.size();
+					auto data = new_opcodes.data();
+
+					//Avoid memory op for stack
+					if (instruction.instruction.operands->mem.base == ZYDIS_REGISTER_RSP) {
+
+						std::printf("Invalid relocation fix candidate for -> %s\n", instruction.instruction.text);
+
+						continue;
+					}
+
+					ZydisDecodedOperandMem* mem;
+					if (instruction.instruction.operands[0].type == ZYDIS_OPERAND_TYPE_MEMORY)
+						mem = &instruction.instruction.operands[0].mem;
+					else
+						mem = &instruction.instruction.operands[1].mem;
+
+					// Getting the memory immediate offset value to build the signature
+					const uint32_t memmory_immediate_offset = mem->disp.value;
+
+					ZyanI64 offset = 0, fix_byte = 0;
+					unsigned char ucOpcodeSignature[11]{ 0 };
+					
+
+					if (instruction.instruction.info.length == 6) {
+
+						std::memcpy(&ucOpcodeSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 6);
+
+						offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 6);
+
+						fix_byte = 2;
+
+					}
+					else if (instruction.instruction.info.length == 7) {
+
+						std::memcpy(&ucOpcodeSignature, reinterpret_cast<void*>(instruction.addressofinstruction), 7);
+
+						offset = findOpcodeOffset(data, size, &ucOpcodeSignature, 7);
+
+						fix_byte = 3;
+
+					}
+					else {
+
+						std::printf("ERROR Unexpected Instruction bitwise/math [], reg or bitwise/math reg, [] -> %s - %d\n", instruction.instruction.text, instruction.instruction.info.length);
+
+						continue;
+					}
+
+					// Retrieving the instruction address in the original section
+					const uintptr_t original_address = instruction.addressofinstruction;
+
+					// Calculating new address in the obfuscated section
+					const uintptr_t obfuscated_va_address = ((imageBase + virtualAddress + offset));
+
+					/*
+						Calculating new displacement for the immediate value
+					*/
+					// Calculating the address of the instruction following the original instruction
+					const uintptr_t original_rip = original_address + instruction.instruction.info.length;
+
+					// Calculating the original target address of the original instruction
+					const uintptr_t target_original = original_rip + memmory_immediate_offset;
+
+					// Calculating the address of the instruction following the obfuscated instruction
+					const uintptr_t new_obfuscated_rip = obfuscated_va_address + instruction.instruction.info.length;
+
+					// New memory immediate value for the instruction
+					const uintptr_t new_memory_immediate = target_original - new_obfuscated_rip;
+
+					// Fixing the immediate value for the "LEA" or "MOV" instruction with the corrected relative immediate value
+					std::memcpy(&*(data + offset + fix_byte), &new_memory_immediate, sizeof(uint32_t));
+
+					std::printf("[OK] Fixing Math/Bitwise Operators -> %s | %d\n", instruction.instruction.text, instruction.instruction.info.length);
 
 			}
 			else if (instruction.instruction.info.meta.category == ZYDIS_CATEGORY_COND_BR || instruction.instruction.info.meta.category == ZYDIS_CATEGORY_UNCOND_BR) {
@@ -2742,6 +3044,12 @@ void RyujinObfuscationCore::applyRelocationFixupsToInstructions(uintptr_t imageB
 					to the first instruction of the block in question so we can determine the jump address for the new obfuscated region.
 				*/
 				auto obfuscated_target_address = basic_block_obfuscated.instructions.at(0).addressofinstruction;
+
+				/*
+					Preventing problems.
+					When IAT is obfuscated. theres no JUMP Address(it's always "0")! because it is solved during runtime. so the reloc is fixed, let's advance to the next blog!
+				*/
+				if (obfuscated_jmp_address == 0 && m_config.m_isIatObfuscation) continue;
 
 				/*
 					Let's fix our new branch. Previously it was a "near" jump, but now it will be "far" depending on the jump length.
@@ -2815,9 +3123,18 @@ void RyujinObfuscationCore::removeOldOpcodeRedirect(uintptr_t newMappedPE, std::
 		We will use findOpcodeOffset to find the exact offset of the procedure's start
 		in the unmapped region with the SEC_IMAGE flag.
 	*/
-	unsigned char ucSigature[10]{ 0 };
-	std::memcpy(ucSigature, reinterpret_cast<void*>(m_proc.address), 10);
-	auto offsetz = findOpcodeOffset(reinterpret_cast<unsigned char*>(newMappedPE), szMapped, &ucSigature, 10);
+	unsigned char* ucSigature = new unsigned char[m_proc.size] { 0 };
+	std::memcpy(ucSigature, reinterpret_cast<void*>(m_proc.address), m_proc.size);
+	auto offsetz = findOpcodeOffset(reinterpret_cast<unsigned char*>(newMappedPE), szMapped, ucSigature, m_proc.size);
+
+	delete[] ucSigature;
+
+	/*
+	* Future assert
+	if (!offsetz) {
+		std::printf("[X] Fatal Error on removeOldOpcodeRedirect -> %s\n", m_proc.name);
+		exit(-1);
+	}*/
 
 	// Based on the obfuscation configuration, some users can decide to not remove the original code from the original procedure after obfuscation.
 	if (!isIgnoreOriginalCodeRemove) std::memset(reinterpret_cast<void*>(newMappedPE + offsetz), 0x90, m_proc.size); // Removing all the opcodes from the original procedure and replacing them with NOP instructions.
