@@ -57,7 +57,7 @@ void RyujinCustomPassDemo(RyujinProcedure* proc) {
 
 void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
 
-    // Traduzindo os registradores do Zydis para Registradores do ASMJIT
+    // Translating Zydis registers to ASMJIT registers
     auto get_asm_reg_64 = [&](ZydisRegister z_reg) -> asmjit::x86::Gp {
 
         switch (z_reg) {
@@ -98,13 +98,15 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
         return asmjit::x86::rax;
     };
 
+    if (proc->name.find("mba_") != std::string::npos) return;
+
     std::printf("[RyujinMBAObfuscationPass] Processando equivalencia MBA em %s\n", proc->name.c_str());
 
-    // Iniciando decoder
+    // Starting decoder
     ZydisDecoder decoder;
     ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
 
-    // Begin z3 context e unique block id
+    // Begin z3 context and unique block id
     z3::context ctx;
     uint64_t unique_id = 0;
 
@@ -115,12 +117,12 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
 
         for (auto& opcode : block.opcodes) {
 
-            // Decodificando instruções com base nos opcodes armazenados em nossos basic blocks(sempre com o contexto atualizado)
+            // Decoding instructions based on the opcodes stored in our basic blocks (always with the context updated)
             ZydisDecodedInstruction instruction{};
             std::vector<ZydisDecodedOperand> operands(ZYDIS_MAX_OPERAND_COUNT);
             std::memset(operands.data(), 0, operands.size() * sizeof(ZydisDecodedOperand));
 
-            ZyanStatus status = ZydisDecoderDecodeFull(&decoder, opcode.data(), opcode.size(), &instruction, operands.data());
+            auto status = ZydisDecoderDecodeFull(&decoder, opcode.data(), opcode.size(), &instruction, operands.data());
             if (!ZYAN_SUCCESS(status)) {
 
                 new_instructions.push_back(opcode);
@@ -129,7 +131,7 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
             }
 
 
-            // Checando se a instrução atual é um candidato para ter uma nova expression MBA(apenas com operações aritimeticas básicas)
+            // Checking if the current instruction is a candidate to have a new MBA expression (only with basic arithmetic operations)
             bool isMbaRewritten = false;
 
             if ((instruction.mnemonic == ZYDIS_MNEMONIC_ADD || instruction.mnemonic == ZYDIS_MNEMONIC_SUB || instruction.mnemonic == ZYDIS_MNEMONIC_XOR ||
@@ -148,9 +150,9 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
                     continue;
                 }
 
-                // Validação da semantica MBA...
+                // Validating MBA semantics...
 
-                // Checando equivalencia(semantica) da expressão com o Z3 para garantir que a expression inserida não quebre posteriormente.
+                // Checking semantic equivalence of the expression with Z3 to ensure the inserted expression won't break later.
                 std::string xs_name = "x_" + std::to_string(unique_id);
                 std::string ys_name = "y_" + std::to_string(unique_id);
                 unique_id++;
@@ -175,7 +177,7 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
 
                 }
 
-                // MBA's expressions para ofuscação
+                // MBA expressions for obfuscation
                 std::vector<z3::expr> obf_variants;
                 switch (instruction.mnemonic) {
 
@@ -225,7 +227,7 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
                     continue;
                 }
 
-                // RNG Deterministico por unique_id para teste de expressions
+                // Deterministic RNG by unique_id for expression testing
                 std::mt19937 gen(static_cast<uint32_t>(unique_id));
                 std::uniform_int_distribution<size_t> dist(0, obf_variants.size() - 1);
                 size_t variant_idx = dist(gen);
@@ -233,11 +235,11 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
 
                 z3::solver solver(ctx);
 
-                // Verificando se a expression MBA é válida
+                // Verifying if the MBA expression is valid
                 solver.add(obf != target);
                 if (solver.check() != z3::unsat) {
 
-                    std::cout << "[RyujinMBAObfuscationPass] Validação de expressões de mesma semantica com o Z3 retornou unsat para o procedimento. não tem uma equivalencia matematica para reescrever como mba de forma segura...\n";
+                    std::cout << "[RyujinMBAObfuscationPass] Validation of semantically equivalent expressions with Z3 returned unsat for the procedure. There is no mathematical equivalence to safely rewrite it as an MBA...\n";
                     new_instructions.push_back(opcode);
 
                     continue;
@@ -245,9 +247,9 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
 
                 try {
 
-                    // Insertion das expressions MBA...
+                    // Insertion of the MBA expressions...
 
-                    // Preparando expressions MBA validadas anteriormente e gerando novas instruções para reproduzirem o mesmo resultado com a teoria de MBA
+                    // Preparing previously validated MBA expressions and generating new instructions to reproduce the same result using MBA theory
                     asmjit::JitRuntime rt;
                     asmjit::CodeHolder code;
                     code.init(rt.environment(), rt.cpuFeatures());
@@ -259,7 +261,7 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
                     asmjit::x86::Gp tmp_tmp = asmjit::x86::r8;
                     asmjit::x86::Gp tmp_extra = asmjit::x86::r9;
 
-                    // Salvando contexto
+                    // Save context
                     a.push(asmjit::x86::rax);
                     a.push(asmjit::x86::rcx);
                     a.push(asmjit::x86::rdx);
@@ -281,10 +283,10 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
 
                     }
 
-                    // Sanity Check: Alinhando instruções para evitar desalinhamentos
+                    // Sanity Check: Aligning instructions to avoid misalignments
                     a.align(asmjit::AlignMode::kCode, 16);
 
-                    // Inserindo expressions MBA para cada mnemonic suportado
+                    // Inserting MBA expressions for each supported mnemonic
                     if (instruction.mnemonic == ZYDIS_MNEMONIC_ADD) {
 
                         if (variant_idx == 0) {
@@ -312,7 +314,7 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
                         }
                         else {
                         
-                            // ~(~x + ~y) + 1  -> mesmo que x + y
+                            // ~(~x + ~y) + 1  -> same as x + y
                             a.mov(tmp_tmp, tmp_x);
                             a.not_(tmp_tmp);            // tmp_tmp = ~x
                             a.mov(tmp_extra, tmp_y);
@@ -423,7 +425,7 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
                         }
                         else if (variant_idx == 1) {
                         
-                            // ~(~x | ~y) => Igual x & y
+                            // ~(~x | ~y) => same as x & y
                             a.mov(tmp_tmp, tmp_x);
                             a.not_(tmp_tmp);            // tmp_tmp = ~x
                             a.mov(tmp_extra, tmp_y);
@@ -490,14 +492,14 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
                         a.mov(dest64, tmp_x);
                     }
 
-                    // Recuperando contexto...
+                    // Retrieving context...
                     a.pop(asmjit::x86::r9);
                     a.pop(asmjit::x86::r8);
                     a.pop(asmjit::x86::rdx);
                     a.pop(asmjit::x86::rcx);
                     a.pop(asmjit::x86::rax);
 
-                    // Gerando novos opcodes processados pelo algoritmo de MBA
+                    // Generating new opcodes processed by the MBA algorithm
                     asmjit::Section* section = code.sectionById(0);
                     if (!section || section->buffer().empty()) {
 
@@ -513,7 +515,7 @@ void RyujinMBAObfuscationPass(RyujinProcedure* proc) {
                 }
                 catch (const std::exception& ex) {
 
-                    // Apenas se a semantica foi inválidada ou alguma instrução não ser semanticamente esperada...
+                    // Only if the semantics were invalidated or some instruction is not semantically expected...
                     std::cerr << "[RyujinMBAObfuscationPass] assembly exception: " << ex.what() << ".\n";
                     new_instructions.push_back(opcode);
 
