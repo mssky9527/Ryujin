@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="DemoObfuscation.vcxproj" Id="f2e6c074-bae1-4a18-a22a-1785965204ae" />
+</Solution>
