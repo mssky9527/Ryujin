@@ -106,9 +106,8 @@ Optional dependency for the GUI:
 ---
 ## Research Paper
 
-The technical paper describing Ryūjin is forthcoming.
-
-**TODO**
+> To better understand Ryūjin, please read the research paper below:
+[**Ryūjin - Writing a Bin2Bin Obfuscator from Scratch for Windows PE x64 and Fully Deobfuscating It**](https://keowu.re/posts/Ry%C5%ABjin---Writing-a-Bin2Bin-Obfuscator-from-Scratch-for-Windows-PE-x64-and-Fully-Deobfuscating-It)
 
 ---
 ## Getting Started
