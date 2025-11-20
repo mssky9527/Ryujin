@@ -2505,7 +2505,7 @@ BOOL RyujinObfuscationCore::Run(bool& RyujinRunOncePass) {
 	//Update basic blocks view based on the new obfuscated 
 	this->updateBasicBlocksContext();
 
-	if (m_config.m_isAntiDebug) {
+	if (m_config.m_isAntiDebug && !m_config.m_isJunkCode) {
 
 		/*
 			There is no need to obfuscate the anti-debug stub code. the junk code/mutation itself will handle that during processing.

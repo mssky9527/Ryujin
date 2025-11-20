@@ -5,13 +5,14 @@
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
-    <Filter Include="Header Files">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    <Filter Include="th3rd">
+      <UniqueIdentifier>{618b6637-1d52-4832-8991-c207a41fb604}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    <Filter Include="Core Header">
+      <UniqueIdentifier>{bd62ddb7-0ef8-419d-b2f2-cb08025256e5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Custom Passes">
+      <UniqueIdentifier>{5f9ba3be-d3ae-43b8-8e74-4a34bbae91ba}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -20,11 +21,14 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="th3rd\argparse.hh">
+      <Filter>th3rd</Filter>
+    </ClInclude>
     <ClInclude Include="RyujinCore.hh">
-      <Filter>Header Files</Filter>
+      <Filter>Core Header</Filter>
     </ClInclude>
     <ClInclude Include="RyujinCustomPasses.hh">
-      <Filter>Header Files</Filter>
+      <Filter>Custom Passes</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

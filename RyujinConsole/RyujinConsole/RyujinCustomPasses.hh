@@ -100,7 +100,7 @@ namespace RyujinCustomPasses {
 
         if (proc->name.find("mba_") == std::string::npos) return;
 
-        std::printf("[RyujinMBAObfuscationPass] Processando equivalencia MBA em %s\n", proc->name.c_str());
+        std::printf("[RyujinMBAObfuscationPass] Processing MBA equivalence for %s\n", proc->name.c_str());
 
         // Starting decoder
         ZydisDecoder decoder;
@@ -261,12 +261,15 @@ namespace RyujinCustomPasses {
                         auto tmp_tmp = asmjit::x86::r8;
                         auto tmp_extra = asmjit::x86::r9;
 
+                        auto result_reg = asmjit::x86::r10; // Final result holder por big int operations
+
                         // Save context
                         a.push(asmjit::x86::rax);
                         a.push(asmjit::x86::rcx);
                         a.push(asmjit::x86::rdx);
                         a.push(asmjit::x86::r8);
                         a.push(asmjit::x86::r9);
+                        a.push(asmjit::x86::r10);
 
                         a.mov(tmp_x, dest64);
 
@@ -326,7 +329,7 @@ namespace RyujinCustomPasses {
 
                             }
 
-                            a.mov(dest64, tmp_x);
+                            a.mov(result_reg, tmp_x);
                         }
                         else if (instruction.mnemonic == ZYDIS_MNEMONIC_SUB) {
 
@@ -366,7 +369,7 @@ namespace RyujinCustomPasses {
 
                             }
 
-                            a.mov(dest64, tmp_x);
+                            a.mov(result_reg, tmp_x);
                         }
                         else if (instruction.mnemonic == ZYDIS_MNEMONIC_XOR) {
 
@@ -408,7 +411,7 @@ namespace RyujinCustomPasses {
 
                             }
 
-                            a.mov(dest64, tmp_x);
+                            a.mov(result_reg, tmp_x);
                         }
                         else if (instruction.mnemonic == ZYDIS_MNEMONIC_AND) {
 
@@ -450,7 +453,7 @@ namespace RyujinCustomPasses {
 
                             }
 
-                            a.mov(dest64, tmp_x);
+                            a.mov(result_reg, tmp_x);
                         }
                         else if (instruction.mnemonic == ZYDIS_MNEMONIC_OR) {
 
@@ -489,15 +492,18 @@ namespace RyujinCustomPasses {
 
                             }
 
-                            a.mov(dest64, tmp_x);
+                            a.mov(result_reg, tmp_x);
                         }
 
                         // Retrieving context...
+                        a.pop(asmjit::x86::r10);
                         a.pop(asmjit::x86::r9);
                         a.pop(asmjit::x86::r8);
                         a.pop(asmjit::x86::rdx);
                         a.pop(asmjit::x86::rcx);
                         a.pop(asmjit::x86::rax);
+
+                        a.mov(dest64, result_reg); // Move back result to dest64 from result operation
 
                         // Generating new opcodes processed by the MBA algorithm
                         auto section = code.sectionById(0);

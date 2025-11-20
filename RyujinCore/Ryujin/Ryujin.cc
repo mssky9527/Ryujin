@@ -2280,25 +2280,29 @@ bool Ryujin::run(const RyujinObfuscatorConfig& config, const std::shared_ptr<Ryu
 
 		}
 
-		// Obfuscating MiniVMMStub/MiniVM normal to difficult RE
-		RyujinProcedure proc;
-		proc.name = "MiniVMStub";
-		proc.address = 0x00;
-		proc.size = miniVmEnter.size();
-		// Create MiniVM basic blocks
-		RyujinBasicBlockerBuilder MiniVMbb(ZYDIS_MACHINE_MODE_LONG_64, ZydisStackWidth_::ZYDIS_STACK_WIDTH_64);
-		proc.basic_blocks = MiniVMbb.createBasicBlocks(miniVmEnter.data(), proc.size, proc.address);
-		// Configure the MiniVM to obfuscate
-		RyujinObfuscatorConfig minivmmCfg{ 0 };
-		minivmmCfg.m_isJunkCode = true;
-		// Setup Obfuscation Core & Run Pass
-		RyujinObfuscationCore obfc(minivmmCfg, proc, 0x00);
-		// Running ryujinminivmobfuscation to protect RyujinMiniVm
-		auto procProcessed = obfc.RunMiniVmObfuscation();
-		// Assign MiniVm obfuscated into MiniVmEnter
-		miniVmEnter.assign(procProcessed.begin(), procProcessed.end());
-		// Deleting ryujin obfuscation core instance
-		obfc.~RyujinObfuscationCore();
+		if (config.m_isMutateMiniVM) {
+
+			// Obfuscating MiniVMMStub/MiniVM normal to difficult RE
+			RyujinProcedure proc;
+			proc.name = "MiniVMStub";
+			proc.address = 0x00;
+			proc.size = miniVmEnter.size();
+			// Create MiniVM basic blocks
+			RyujinBasicBlockerBuilder MiniVMbb(ZYDIS_MACHINE_MODE_LONG_64, ZydisStackWidth_::ZYDIS_STACK_WIDTH_64);
+			proc.basic_blocks = MiniVMbb.createBasicBlocks(miniVmEnter.data(), proc.size, proc.address);
+			// Configure the MiniVM to obfuscate
+			RyujinObfuscatorConfig minivmmCfg{ 0 };
+			minivmmCfg.m_isJunkCode = true;
+			// Setup Obfuscation Core & Run Pass
+			RyujinObfuscationCore obfc(minivmmCfg, proc, 0x00);
+			// Running ryujinminivmobfuscation to protect RyujinMiniVm
+			auto procProcessed = obfc.RunMiniVmObfuscation();
+			// Assign MiniVm obfuscated into MiniVmEnter
+			miniVmEnter.assign(procProcessed.begin(), procProcessed.end());
+			// Deleting ryujin obfuscation core instance
+			obfc.~RyujinObfuscationCore();
+
+		}
 
 		// Inserting the Ryujin MiniVm stub at the beginning of Ryujin section
 		opcodesWithRelocsFixed.insert(opcodesWithRelocsFixed.end(), miniVmEnter.begin(), miniVmEnter.end());

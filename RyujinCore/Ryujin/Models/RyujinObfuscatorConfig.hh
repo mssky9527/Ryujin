@@ -38,6 +38,7 @@ public:
     bool m_isAntiDump; // Enable Anti Dump technic for Ryujin protected binary
     bool m_isMemoryProtection; // Memory CRC32 protection
     bool m_isHVPass; // Run some features of ryujin using Microsoft Hypervisor Framework API
+    bool m_isMutateMiniVM; // Perform the mutation and add full junk code to the Ryujin MiniVM stub, regardless of whether it’s the normal version or the HV pass.
     RyujinObfuscatorProcs m_strProceduresToObfuscate; // Names of the procedures to obfuscate
     RyujinCallbacks m_callbacks; // Ryujin Custom Pass Callbacks
 
